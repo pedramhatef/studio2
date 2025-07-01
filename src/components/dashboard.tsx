@@ -84,7 +84,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>24-hour price data from CoinGecko, updated every second. Signals are for demonstration only.</CardDescription>
+              <CardDescription>24-hour price data from MEXC, updated every second. Signals are for demonstration only.</CardDescription>
             </div>
             <div className="flex items-center space-x-4">
               <Label className="font-semibold">Signal Frequency:</Label>

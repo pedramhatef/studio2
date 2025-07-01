@@ -25,20 +25,30 @@ export async function getMarketSentiment() {
 
 export async function getChartData(): Promise<ChartDataPoint[]> {
   try {
-    const response = await fetch('https://api.coingecko.com/api/v3/coins/dogecoin/market_chart?vs_currency=usd&days=1', { cache: 'no-store' });
+    const endTime = Math.floor(Date.now() / 1000);
+    const startTime = endTime - (24 * 60 * 60); // 24 hours ago
+    const interval = 'Min5';
+    const symbol = 'DOGE_USDT';
+
+    const url = `https://contract.mexc.com/api/v1/contract/kline/${symbol}?interval=${interval}&start=${startTime}&end=${endTime}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    
     if (!response.ok) {
-      console.error(`Failed to fetch data from CoinGecko: ${response.statusText}`);
+      console.error(`Failed to fetch data from MEXC: ${response.statusText}`);
       return [];
     }
     const data = await response.json();
 
-    if (!data.prices || data.prices.length === 0) {
+    if (data.code !== 0 || !data.data || !data.data.time || data.data.time.length === 0) {
+      console.error("Invalid data from MEXC API:", data.msg || "No data returned");
       return [];
     }
     
-    const formattedData: ChartDataPoint[] = data.prices.map((p: [number, number]) => ({
-      time: p[0],
-      price: p[1],
+    const { time, close } = data.data;
+
+    const formattedData: ChartDataPoint[] = time.map((t: number, index: number) => ({
+      time: t * 1000,
+      price: close[index],
     }));
     return formattedData;
   } catch (error) {
