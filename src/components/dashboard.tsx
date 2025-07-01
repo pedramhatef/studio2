@@ -2,27 +2,42 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
 import { CryptoChart } from './crypto-chart';
 import { SignalHistory } from './signal-history';
-import type { ChartDataPoint, Signal, Sensitivity } from '@/lib/types';
+import type { ChartDataPoint, Signal } from '@/lib/types';
 import { BarChart2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getChartData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 
-const SENSITIVITY_SETTINGS = {
-  Low: { probability: 0.1 },
-  Medium: { probability: 0.3 },
-  High: { probability: 0.5 },
-};
 const DATA_REFRESH_INTERVAL = 1000; // 1 second
+
+// Helper to calculate Exponential Moving Average (EMA)
+const calculateEMA = (data: number[], period: number): (number | null)[] => {
+  if (data.length < period) return new Array(data.length).fill(null);
+  
+  const k = 2 / (period + 1);
+  const emaArray: (number | null)[] = new Array(data.length).fill(null);
+
+  // First EMA is the SMA of the first 'period' data points
+  let sma = data.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+  emaArray[period - 1] = sma;
+
+  // Calculate subsequent EMAs
+  for (let i = period; i < data.length; i++) {
+    const prevEma = emaArray[i - 1];
+    if (prevEma !== null) {
+      emaArray[i] = (data[i] * k) + (prevEma * (1 - k));
+    }
+  }
+  
+  return emaArray;
+};
+
 
 export function Dashboard() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
-  const [sensitivity, setSensitivity] = useState<Sensitivity>('Medium');
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
@@ -35,7 +50,7 @@ export function Dashboard() {
           toast({
             variant: "destructive",
             title: "Error fetching data",
-            description: "Could not fetch chart data. Retrying in 1s.",
+            description: "Could not fetch chart data. Retrying...",
           });
         }
         return;
@@ -43,30 +58,67 @@ export function Dashboard() {
       
       setChartData(formattedData);
 
-      const { probability } = SENSITIVITY_SETTINGS[sensitivity];
-      if (Math.random() < probability) {
-        const lastDataPoint = formattedData[formattedData.length - 1];
-        const lastSignalType = signals.length > 0 ? signals[0].type : 'SELL'; // Default to SELL so the first signal is BUY
-        const type = lastSignalType === 'BUY' ? 'SELL' : 'BUY';
+      // --- Signal Generation Logic using MACD Crossover ---
+      if (formattedData.length < 35) return; // Not enough data for MACD(12,26,9)
+
+      const prices = formattedData.map(p => p.price);
+      
+      const ema12 = calculateEMA(prices, 12);
+      const ema26 = calculateEMA(prices, 26);
+
+      const macdLine = ema26.map((slow, i) => {
+          if (slow !== null && ema12[i] !== null) {
+              return ema12[i]! - slow;
+          }
+          return null;
+      });
+
+      const macdValues = macdLine.filter(val => val !== null) as number[];
+      if (macdValues.length < 10) return;
+
+      const signalLineEma = calculateEMA(macdValues, 9);
+      const signalValues = signalLineEma.filter(val => val !== null) as number[];
+      if (signalValues.length < 2) return;
+
+      const macdSlice = macdValues.slice(-signalValues.length);
+
+      const lastMacd = macdSlice[macdSlice.length - 1];
+      const prevMacd = macdSlice[macdSlice.length - 2];
+      const lastSignal = signalValues[signalValues.length - 1];
+      const prevSignal = signalValues[signalValues.length - 2];
+
+      const lastSignalType = signals.length > 0 ? signals[0].type : null;
+      
+      const hasBullishCrossover = prevMacd < prevSignal && lastMacd > lastSignal;
+      const hasBearishCrossover = prevMacd > prevSignal && lastMacd < lastSignal;
+
+      const lastDataPoint = formattedData[formattedData.length - 1];
+      
+      if (hasBullishCrossover && lastSignalType !== 'BUY') {
         const newSignal: Signal = {
-          type,
+          type: 'BUY',
+          price: lastDataPoint.price,
+          time: lastDataPoint.time,
+          displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
+        };
+        setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
+      } else if (hasBearishCrossover && lastSignalType !== 'SELL') {
+        const newSignal: Signal = {
+          type: 'SELL',
           price: lastDataPoint.price,
           time: lastDataPoint.time,
           displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
         };
         setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
       }
+
     } catch (error) {
-      console.error("Error fetching crypto data:", error);
-      toast({
-        variant: "destructive",
-        title: "An unexpected error occurred",
-        description: "Could not update dashboard data.",
-      });
+      console.error("Error processing data:", error);
+      // We don't toast here to avoid spamming on rapid refreshes
     } finally {
       setIsLoading(false);
     }
-  }, [sensitivity, toast, chartData.length, signals]);
+  }, [toast, chartData.length, signals]);
 
   useEffect(() => {
     fetchDataAndGenerateSignal();
@@ -84,28 +136,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>24-hour price data from MEXC, updated every second. Signals are for demonstration only.</CardDescription>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Label className="font-semibold">Signal Frequency:</Label>
-              <RadioGroup
-                defaultValue="Medium"
-                onValueChange={(value: string) => setSensitivity(value as Sensitivity)}
-                className="flex items-center gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="Low" id="low" />
-                  <Label htmlFor="low">Low</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="Medium" id="medium" />
-                  <Label htmlFor="medium">Medium</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="High" id="high" />
-                  <Label htmlFor="high">High</Label>
-                </div>
-              </RadioGroup>
+              <CardDescription>24-hour price data from MEXC. Signals are generated using MACD crossover analysis and are for demonstration only.</CardDescription>
             </div>
           </div>
         </CardHeader>
