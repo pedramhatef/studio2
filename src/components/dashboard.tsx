@@ -13,9 +13,9 @@ import { getChartData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 
 const SENSITIVITY_SETTINGS = {
-  Low: { probability: 0.01 },
-  Medium: { probability: 0.03 },
-  High: { probability: 0.05 },
+  Low: { probability: 0.1 },
+  Medium: { probability: 0.3 },
+  High: { probability: 0.5 },
 };
 const DATA_REFRESH_INTERVAL = 30000; // 30 seconds
 
@@ -46,7 +46,8 @@ export function Dashboard() {
       const { probability } = SENSITIVITY_SETTINGS[sensitivity];
       if (Math.random() < probability) {
         const lastDataPoint = formattedData[formattedData.length - 1];
-        const type = Math.random() > 0.5 ? 'BUY' : 'SELL';
+        const lastSignalType = signals.length > 0 ? signals[0].type : 'SELL'; // Default to SELL so the first signal is BUY
+        const type = lastSignalType === 'BUY' ? 'SELL' : 'BUY';
         const newSignal: Signal = {
           type,
           price: lastDataPoint.price,
@@ -65,7 +66,7 @@ export function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [sensitivity, toast, chartData.length]);
+  }, [sensitivity, toast, chartData.length, signals]);
 
   useEffect(() => {
     fetchDataAndGenerateSignal();
