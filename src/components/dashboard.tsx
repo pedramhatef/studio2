@@ -63,7 +63,7 @@ export function Dashboard() {
       
       setChartData(formattedData);
 
-      // --- Signal Generation Logic using MACD Crossover ---
+      // --- Signal Generation Logic using MACD State ---
       if (formattedData.length < MACD_SLOW_PERIOD + MACD_SIGNAL_PERIOD) return; // Not enough data for MACD
 
       const prices = formattedData.map(p => p.price);
@@ -79,27 +79,24 @@ export function Dashboard() {
       });
 
       const macdValues = macdLine.filter(val => val !== null) as number[];
-      if (macdValues.length < MACD_SIGNAL_PERIOD + 1) return;
+      if (macdValues.length < MACD_SIGNAL_PERIOD) return;
 
       const signalLineEma = calculateEMA(macdValues, MACD_SIGNAL_PERIOD);
       const signalValues = signalLineEma.filter(val => val !== null) as number[];
-      if (signalValues.length < 2) return;
+      if (signalValues.length < 1) return;
 
+      // Align MACD values with signal line values for comparison
       const macdSlice = macdValues.slice(-signalValues.length);
 
       const lastMacd = macdSlice[macdSlice.length - 1];
-      const prevMacd = macdSlice[macdSlice.length - 2];
-      const lastSignal = signalValues[signalValues.length - 1];
-      const prevSignal = signalValues[signalValues.length - 2];
-
-      const lastSignalType = signals.length > 0 ? signals[0].type : null;
+      const lastSignalLine = signalValues[signalValues.length - 1];
       
-      const hasBullishCrossover = prevMacd < prevSignal && lastMacd > lastSignal;
-      const hasBearishCrossover = prevMacd > prevSignal && lastMacd < lastSignal;
-
+      const lastSignalType = signals.length > 0 ? signals[0].type : null;
       const lastDataPoint = formattedData[formattedData.length - 1];
       
-      if (hasBullishCrossover && lastSignalType !== 'BUY') {
+      // If MACD is above the signal line, we're in a "BUY" state.
+      // Generate a signal if the last signal wasn't also a BUY.
+      if (lastMacd > lastSignalLine && lastSignalType !== 'BUY') {
         const newSignal: Signal = {
           type: 'BUY',
           price: lastDataPoint.price,
@@ -107,7 +104,10 @@ export function Dashboard() {
           displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
         };
         setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
-      } else if (hasBearishCrossover && lastSignalType !== 'SELL') {
+      } 
+      // If MACD is below the signal line, we're in a "SELL" state.
+      // Generate a signal if the last signal wasn't also a SELL.
+      else if (lastMacd < lastSignalLine && lastSignalType !== 'SELL') {
         const newSignal: Signal = {
           type: 'SELL',
           price: lastDataPoint.price,
@@ -141,7 +141,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>24-hour price data from MEXC. Signals are generated using MACD crossover analysis and are for demonstration only.</CardDescription>
+              <CardDescription>24-hour price data from MEXC. Signals are generated using MACD analysis and are for demonstration only.</CardDescription>
             </div>
           </div>
         </CardHeader>
