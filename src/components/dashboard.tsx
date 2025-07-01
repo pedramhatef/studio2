@@ -9,6 +9,8 @@ import { SignalHistory } from './signal-history';
 import type { ChartDataPoint, Signal, Sensitivity } from '@/lib/types';
 import { BarChart2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getChartData } from '@/app/actions';
+import { useToast } from '@/hooks/use-toast';
 
 const SENSITIVITY_SETTINGS = {
   Low: { probability: 0.01 },
@@ -22,24 +24,23 @@ export function Dashboard() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [sensitivity, setSensitivity] = useState<Sensitivity>('Medium');
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
   const fetchDataAndGenerateSignal = useCallback(async () => {
-    if (!isLoading) setIsLoading(true);
     try {
-      const response = await fetch('https://api.coingecko.com/api/v3/coins/dogecoin/market_chart?vs_currency=usd&days=1');
-      if (!response.ok) {
-        throw new Error('Failed to fetch data from CoinGecko');
-      }
-      const data = await response.json();
+      const formattedData = await getChartData();
 
-      if (!data.prices || data.prices.length === 0) {
+      if (!formattedData || formattedData.length === 0) {
+        if (chartData.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "Error fetching data",
+            description: "Could not fetch chart data. Retrying in 30s.",
+          });
+        }
         return;
       }
       
-      const formattedData: ChartDataPoint[] = data.prices.map((p: [number, number]) => ({
-        time: p[0],
-        price: p[1],
-      }));
       setChartData(formattedData);
 
       const { probability } = SENSITIVITY_SETTINGS[sensitivity];
@@ -56,10 +57,15 @@ export function Dashboard() {
       }
     } catch (error) {
       console.error("Error fetching crypto data:", error);
+      toast({
+        variant: "destructive",
+        title: "An unexpected error occurred",
+        description: "Could not update dashboard data.",
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [sensitivity, isLoading]);
+  }, [sensitivity, toast, chartData.length]);
 
   useEffect(() => {
     fetchDataAndGenerateSignal();
