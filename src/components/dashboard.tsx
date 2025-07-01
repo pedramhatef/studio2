@@ -8,61 +8,64 @@ import { CryptoChart } from './crypto-chart';
 import { SignalHistory } from './signal-history';
 import type { ChartDataPoint, Signal, Sensitivity } from '@/lib/types';
 import { BarChart2 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const SENSITIVITY_SETTINGS = {
-  Low: { probability: 0.05, interval: 2000 },
-  Medium: { probability: 0.15, interval: 1500 },
-  High: { probability: 0.3, interval: 1000 },
+  Low: { probability: 0.01 },
+  Medium: { probability: 0.03 },
+  High: { probability: 0.05 },
 };
+const DATA_REFRESH_INTERVAL = 30000; // 30 seconds
 
 export function Dashboard() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [sensitivity, setSensitivity] = useState<Sensitivity>('Medium');
-  
-  const generateNewDataPoint = useCallback((lastPrice: number): ChartDataPoint => {
-    const time = Date.now();
-    const change = (Math.random() - 0.5) * (lastPrice * 0.015);
-    const newPrice = Math.max(lastPrice + change, 0.01);
-    return { time, price: newPrice };
-  }, []);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const initialData: ChartDataPoint[] = [];
-    let lastPrice = 0.15;
-    const now = Date.now();
-    for (let i = 50; i > 0; i--) {
-      const point = generateNewDataPoint(lastPrice);
-      initialData.push({ ...point, time: now - i * SENSITIVITY_SETTINGS.Medium.interval });
-      lastPrice = point.price;
+  const fetchDataAndGenerateSignal = useCallback(async () => {
+    if (!isLoading) setIsLoading(true);
+    try {
+      const response = await fetch('https://api.coingecko.com/api/v3/coins/dogecoin/market_chart?vs_currency=usd&days=1');
+      if (!response.ok) {
+        throw new Error('Failed to fetch data from CoinGecko');
+      }
+      const data = await response.json();
+
+      if (!data.prices || data.prices.length === 0) {
+        return;
+      }
+      
+      const formattedData: ChartDataPoint[] = data.prices.map((p: [number, number]) => ({
+        time: p[0],
+        price: p[1],
+      }));
+      setChartData(formattedData);
+
+      const { probability } = SENSITIVITY_SETTINGS[sensitivity];
+      if (Math.random() < probability) {
+        const lastDataPoint = formattedData[formattedData.length - 1];
+        const type = Math.random() > 0.5 ? 'BUY' : 'SELL';
+        const newSignal: Signal = {
+          type,
+          price: lastDataPoint.price,
+          time: lastDataPoint.time,
+          displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
+        };
+        setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
+      }
+    } catch (error) {
+      console.error("Error fetching crypto data:", error);
+    } finally {
+      setIsLoading(false);
     }
-    setChartData(initialData);
-  }, [generateNewDataPoint]);
+  }, [sensitivity, isLoading]);
 
   useEffect(() => {
-    const { probability, interval } = SENSITIVITY_SETTINGS[sensitivity];
-    const timer = setInterval(() => {
-      setChartData(prevData => {
-        const lastPoint = prevData[prevData.length - 1] || { price: 0.15, time: Date.now() };
-        const newDataPoint = generateNewDataPoint(lastPoint.price);
-        const newChartData = [...prevData.slice(1), newDataPoint];
-
-        if (Math.random() < probability) {
-          const type = Math.random() > 0.5 ? 'BUY' : 'SELL';
-          const newSignal: Signal = {
-            type,
-            price: newDataPoint.price,
-            time: newDataPoint.time,
-            displayTime: new Date(newDataPoint.time).toLocaleTimeString(),
-          };
-          setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
-        }
-        return newChartData;
-      });
-    }, interval);
-
-    return () => clearInterval(timer);
-  }, [sensitivity, generateNewDataPoint]);
+    fetchDataAndGenerateSignal();
+    const intervalId = setInterval(fetchDataAndGenerateSignal, DATA_REFRESH_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [fetchDataAndGenerateSignal]);
 
   return (
     <div className="grid gap-8">
@@ -74,10 +77,10 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>Aggressive signals for 100x leverage trades. For demonstration purposes only.</CardDescription>
+              <CardDescription>24-hour price data from CoinGecko, updated every 30 seconds. Signals are for demonstration only.</CardDescription>
             </div>
             <div className="flex items-center space-x-4">
-              <Label className="font-semibold">Sensitivity:</Label>
+              <Label className="font-semibold">Signal Frequency:</Label>
               <RadioGroup
                 defaultValue="Medium"
                 onValueChange={(value: string) => setSensitivity(value as Sensitivity)}
@@ -100,7 +103,11 @@ export function Dashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <CryptoChart data={chartData} signals={signals} />
+          {isLoading && chartData.length === 0 ? (
+            <Skeleton className="h-[400px] w-full" />
+          ) : (
+            <CryptoChart data={chartData} signals={signals} />
+          )}
         </CardContent>
       </Card>
       <SignalHistory signals={signals} />
