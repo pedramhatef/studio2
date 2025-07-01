@@ -17,7 +17,7 @@ const SENSITIVITY_SETTINGS = {
   Medium: { probability: 0.3 },
   High: { probability: 0.5 },
 };
-const DATA_REFRESH_INTERVAL = 30000; // 30 seconds
+const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
 export function Dashboard() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -35,7 +35,7 @@ export function Dashboard() {
           toast({
             variant: "destructive",
             title: "Error fetching data",
-            description: "Could not fetch chart data. Retrying in 30s.",
+            description: "Could not fetch chart data. Retrying in 1s.",
           });
         }
         return;
@@ -84,7 +84,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>24-hour price data from CoinGecko, updated every 30 seconds. Signals are for demonstration only.</CardDescription>
+              <CardDescription>24-hour price data from CoinGecko, updated every second. Signals are for demonstration only.</CardDescription>
             </div>
             <div className="flex items-center space-x-4">
               <Label className="font-semibold">Signal Frequency:</Label>
