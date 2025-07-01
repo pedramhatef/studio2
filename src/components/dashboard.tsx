@@ -12,6 +12,11 @@ import { useToast } from '@/hooks/use-toast';
 
 const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
+// --- Technical Indicator Parameters ---
+const MACD_FAST_PERIOD = 8;
+const MACD_SLOW_PERIOD = 17;
+const MACD_SIGNAL_PERIOD = 9;
+
 // Helper to calculate Exponential Moving Average (EMA)
 const calculateEMA = (data: number[], period: number): (number | null)[] => {
   if (data.length < period) return new Array(data.length).fill(null);
@@ -59,24 +64,24 @@ export function Dashboard() {
       setChartData(formattedData);
 
       // --- Signal Generation Logic using MACD Crossover ---
-      if (formattedData.length < 35) return; // Not enough data for MACD(12,26,9)
+      if (formattedData.length < MACD_SLOW_PERIOD + MACD_SIGNAL_PERIOD) return; // Not enough data for MACD
 
       const prices = formattedData.map(p => p.price);
       
-      const ema12 = calculateEMA(prices, 12);
-      const ema26 = calculateEMA(prices, 26);
+      const emaFast = calculateEMA(prices, MACD_FAST_PERIOD);
+      const emaSlow = calculateEMA(prices, MACD_SLOW_PERIOD);
 
-      const macdLine = ema26.map((slow, i) => {
-          if (slow !== null && ema12[i] !== null) {
-              return ema12[i]! - slow;
+      const macdLine = emaSlow.map((slow, i) => {
+          if (slow !== null && emaFast[i] !== null) {
+              return emaFast[i]! - slow;
           }
           return null;
       });
 
       const macdValues = macdLine.filter(val => val !== null) as number[];
-      if (macdValues.length < 10) return;
+      if (macdValues.length < MACD_SIGNAL_PERIOD + 1) return;
 
-      const signalLineEma = calculateEMA(macdValues, 9);
+      const signalLineEma = calculateEMA(macdValues, MACD_SIGNAL_PERIOD);
       const signalValues = signalLineEma.filter(val => val !== null) as number[];
       if (signalValues.length < 2) return;
 
