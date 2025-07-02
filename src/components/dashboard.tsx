@@ -44,6 +44,7 @@ export function Dashboard() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [trendWarning, setTrendWarning] = useState<boolean>(false);
   const { toast } = useToast();
 
   const fetchDataAndGenerateSignal = useCallback(async () => {
@@ -91,6 +92,13 @@ export function Dashboard() {
       const lastMacd = macdSlice[macdSlice.length - 1];
       const lastSignalLine = signalValues[signalValues.length - 1];
       
+      // --- Trend Weakening/Warning Logic ---
+      const histogram = lastMacd - lastSignalLine;
+      // Set a dynamic threshold based on a fraction of the MACD value itself.
+      // When the histogram (gap between lines) is less than this, the trend is weakening.
+      const WARNING_THRESHOLD = Math.abs(lastMacd) * 0.10; // 10% of MACD value
+      setTrendWarning(Math.abs(histogram) < WARNING_THRESHOLD);
+
       const lastSignalType = signals.length > 0 ? signals[0].type : null;
       const lastDataPoint = formattedData[formattedData.length - 1];
       
@@ -149,7 +157,7 @@ export function Dashboard() {
           {isLoading && chartData.length === 0 ? (
             <Skeleton className="h-[400px] w-full" />
           ) : (
-            <CryptoChart data={chartData} signals={signals} />
+            <CryptoChart data={chartData} signals={signals} trendWarning={trendWarning} />
           )}
         </CardContent>
       </Card>

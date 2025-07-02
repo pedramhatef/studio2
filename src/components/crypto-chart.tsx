@@ -3,11 +3,12 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts';
 import type { ChartDataPoint, Signal } from '@/lib/types';
 import { useMemo } from 'react';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, AlertTriangle } from 'lucide-react';
 
 interface CryptoChartProps {
   data: ChartDataPoint[];
   signals: Signal[];
+  trendWarning: boolean;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -34,7 +35,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export function CryptoChart({ data, signals }: CryptoChartProps) {
+export function CryptoChart({ data, signals, trendWarning }: CryptoChartProps) {
   const yAxisDomain = useMemo(() => {
     if (data.length === 0) return [0, 1];
     const prices = data.map(p => p.price);
@@ -92,19 +93,25 @@ export function CryptoChart({ data, signals }: CryptoChartProps) {
         </LineChart>
       </ResponsiveContainer>
       {latestSignal && (
-         <div className={`absolute top-4 right-4 p-3 rounded-lg border shadow-lg flex items-center gap-3 animate-fade-in ${latestSignal.type === 'BUY' ? 'bg-buy/20 border-buy' : 'bg-sell/20 border-sell'}`}>
+         <div className={`absolute top-4 right-4 p-3 rounded-lg border shadow-lg flex items-center gap-3 animate-fade-in ${trendWarning ? 'bg-yellow-500/10 border-yellow-500' : (latestSignal.type === 'BUY' ? 'bg-buy/20 border-buy' : 'bg-sell/20 border-sell')}`}>
             {latestSignal.type === 'BUY' ? (
-                <ArrowUp className="h-6 w-6 text-buy" />
+                <ArrowUp className={`h-6 w-6 ${trendWarning ? 'text-yellow-500' : 'text-buy'}`} />
             ) : (
-                <ArrowDown className="h-6 w-6 text-sell" />
+                <ArrowDown className={`h-6 w-6 ${trendWarning ? 'text-yellow-500' : 'text-sell'}`} />
             )}
             <div>
-                <p className={`font-bold ${latestSignal.type === 'BUY' ? 'text-buy' : 'text-sell'}`}>
+                <p className={`font-bold ${trendWarning ? 'text-yellow-500' : (latestSignal.type === 'BUY' ? 'text-buy' : 'text-sell')}`}>
                     {latestSignal.type} SIGNAL
                 </p>
                 <p className="text-sm text-foreground">
                     @ ${latestSignal.price.toFixed(5)}
                 </p>
+                {trendWarning && (
+                    <div className="flex items-center gap-1 mt-1 text-yellow-500">
+                        <AlertTriangle className="h-4 w-4" />
+                        <p className="text-xs font-semibold">TREND WEAKENING</p>
+                    </div>
+                )}
             </div>
          </div>
       )}
