@@ -13,9 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
 // --- Technical Indicator Parameters ---
-const MACD_FAST_PERIOD = 5;
-const MACD_SLOW_PERIOD = 13;
-const MACD_SIGNAL_PERIOD = 5;
+const MACD_FAST_PERIOD = 12;
+const MACD_SLOW_PERIOD = 26;
+const MACD_SIGNAL_PERIOD = 9;
 
 // Helper to calculate Exponential Moving Average (EMA)
 const calculateEMA = (data: number[], period: number): (number | null)[] => {
@@ -149,7 +149,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>24-hour price data from MEXC. Signals are generated using MACD analysis and are for demonstration only.</CardDescription>
+              <CardDescription>1-minute price data from MEXC. Signals are generated using MACD analysis and are for demonstration only.</CardDescription>
             </div>
           </div>
         </CardHeader>
