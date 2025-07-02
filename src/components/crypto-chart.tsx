@@ -1,9 +1,10 @@
 'use client';
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts';
-import type { ChartDataPoint, Signal } from '@/lib/types';
+import type { ChartDataPoint, Signal, SignalLevel } from '@/lib/types';
 import { useMemo } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface CryptoChartProps {
   data: ChartDataPoint[];
@@ -33,6 +34,34 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   }
   return null;
 };
+
+const radiusMap: Record<SignalLevel, number> = {
+  High: 7,
+  Medium: 5,
+  Low: 3,
+};
+
+const getSignalBoxClasses = (signal: Signal) => {
+    const borderColor = signal.type === 'BUY' ? 'border-buy' : 'border-sell';
+    let bgColor = '';
+    // The full classes need to be present for Tailwind's JIT compiler
+    // bg-buy/20 bg-buy/15 bg-buy/10 bg-sell/20 bg-sell/15 bg-sell/10
+    if (signal.type === 'BUY') {
+        switch (signal.level) {
+            case 'High': bgColor = 'bg-buy/20'; break;
+            case 'Medium': bgColor = 'bg-buy/15'; break;
+            case 'Low': bgColor = 'bg-buy/10'; break;
+        }
+    } else {
+        switch (signal.level) {
+            case 'High': bgColor = 'bg-sell/20'; break;
+            case 'Medium': bgColor = 'bg-sell/15'; break;
+            case 'Low': bgColor = 'bg-sell/10'; break;
+        }
+    }
+    return `${borderColor} ${bgColor}`;
+};
+
 
 export function CryptoChart({ data, signals }: CryptoChartProps) {
   const yAxisDomain = useMemo(() => {
@@ -81,18 +110,21 @@ export function CryptoChart({ data, signals }: CryptoChartProps) {
               key={index}
               x={signal.time}
               y={signal.price}
-              r={5}
+              r={radiusMap[signal.level]}
               fill={signal.type === 'BUY' ? 'hsl(var(--buy))' : 'hsl(var(--sell))'}
               stroke="hsl(var(--background))"
               strokeWidth={2}
               isFront={true}
-              className={index === 0 ? 'animate-pulse' : ''}
+              className={cn(index === 0 && signal.level === 'High' ? 'animate-pulse' : '')}
             />
           ))}
         </LineChart>
       </ResponsiveContainer>
       {latestSignal && (
-         <div className={`absolute top-4 right-4 p-3 rounded-lg border shadow-lg flex items-center gap-3 animate-fade-in ${(latestSignal.type === 'BUY' ? 'bg-buy/20 border-buy' : 'bg-sell/20 border-sell')}`}>
+         <div className={cn(
+             "absolute top-4 right-4 p-3 rounded-lg border shadow-lg flex items-center gap-3 animate-fade-in",
+             getSignalBoxClasses(latestSignal)
+         )}>
             {latestSignal.type === 'BUY' ? (
                 <ArrowUp className="h-6 w-6 text-buy" />
             ) : (
@@ -100,7 +132,7 @@ export function CryptoChart({ data, signals }: CryptoChartProps) {
             )}
             <div>
                 <p className={`font-bold ${(latestSignal.type === 'BUY' ? 'text-buy' : 'text-sell')}`}>
-                    {latestSignal.type} SIGNAL
+                    {latestSignal.level.toUpperCase()} {latestSignal.type} SIGNAL
                 </p>
                 <p className="text-sm text-foreground">
                     @ ${latestSignal.price.toFixed(5)}

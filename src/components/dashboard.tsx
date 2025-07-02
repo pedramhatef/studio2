@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { CryptoChart } from './crypto-chart';
 import { SignalHistory } from './signal-history';
-import type { ChartDataPoint, Signal } from '@/lib/types';
+import type { ChartDataPoint, Signal, SignalLevel } from '@/lib/types';
 import { BarChart2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getChartData } from '@/app/actions';
@@ -156,37 +156,46 @@ export function Dashboard() {
       
       if (lastTci === null || prevTci === null || lastWt2 === null || prevWt2 === null || lastMacd === null || lastMacdSignal === null || lastRsi === null) return;
 
-      const lastSignalType = signals.length > 0 ? signals[0].type : null;
+      const lastSignal = signals.length > 0 ? signals[0] : null;
       const lastDataPoint = formattedData[formattedData.length - 1];
       
-      // BUY Condition: WaveTrend bullish cross + MACD confirms bullish + RSI not overbought
-      const isBuySignal = prevTci < prevWt2 && lastTci > lastWt2;
-      const isBuyConfirmed = lastMacd > lastMacdSignal;
-      const isNotOverbought = lastRsi < RSI_OVERBOUGHT;
+      // Define conditions
+      const isWTBuy = prevTci < prevWt2 && lastTci > lastWt2;
+      const isMACDBuy = lastMacd > lastMacdSignal;
+      const isRSIBuySafe = lastRsi < RSI_OVERBOUGHT;
 
-      if (isBuySignal && isBuyConfirmed && isNotOverbought && lastSignalType !== 'BUY') {
-        const newSignal: Signal = {
-          type: 'BUY',
-          price: lastDataPoint.close,
-          time: lastDataPoint.time,
-          displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
-        };
-        setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
-      } 
+      const isWTSell = prevTci > prevWt2 && lastTci < lastWt2;
+      const isMACDSell = lastMacd < lastMacdSignal;
+      const isRSISellSafe = lastRsi > RSI_OVERSOLD;
+
+      let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
       
-      // SELL Condition: WaveTrend bearish cross + MACD confirms bearish + RSI not oversold
-      const isSellSignal = prevTci > prevWt2 && lastTci < lastWt2;
-      const isSellConfirmed = lastMacd < lastMacdSignal;
-      const isNotOversold = lastRsi > RSI_OVERSOLD;
-      
-      if (isSellSignal && isSellConfirmed && isNotOversold && lastSignalType !== 'SELL') {
-        const newSignal: Signal = {
-          type: 'SELL',
-          price: lastDataPoint.close,
-          time: lastDataPoint.time,
-          displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
+      if (isWTBuy && lastSignal?.type !== 'BUY') {
+        if (isMACDBuy && isRSIBuySafe) {
+          newSignal = { type: 'BUY', level: 'High' };
+        } else if (isMACDBuy && !isRSIBuySafe) {
+          newSignal = { type: 'BUY', level: 'Medium' };
+        } else if (!isMACDBuy && isRSIBuySafe) {
+          newSignal = { type: 'BUY', level: 'Low' };
+        }
+      } else if (isWTSell && lastSignal?.type !== 'SELL') {
+        if (isMACDSell && isRSISellSafe) {
+          newSignal = { type: 'SELL', level: 'High' };
+        } else if (isMACDSell && !isRSISellSafe) {
+          newSignal = { type: 'SELL', level: 'Medium' };
+        } else if (!isMACDSell && isRSISellSafe) {
+          newSignal = { type: 'SELL', level: 'Low' };
+        }
+      }
+
+      if (newSignal) {
+        const fullSignal: Signal = {
+            ...newSignal,
+            price: lastDataPoint.close,
+            time: lastDataPoint.time,
+            displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
         };
-        setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
+        setSignals(prevSignals => [fullSignal, ...prevSignals].slice(0, 15));
       }
 
     } catch (error) {

@@ -2,11 +2,20 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { Signal } from '@/lib/types';
+import type { Signal, SignalLevel } from '@/lib/types';
 import { History } from 'lucide-react';
 
 interface SignalHistoryProps {
   signals: Signal[];
+}
+
+const getLevelClass = (level: SignalLevel) => {
+    switch (level) {
+        case 'High': return 'text-primary';
+        case 'Medium': return 'text-foreground';
+        case 'Low': return 'text-muted-foreground';
+        default: return 'text-muted-foreground';
+    }
 }
 
 export function SignalHistory({ signals }: SignalHistoryProps) {
@@ -26,6 +35,7 @@ export function SignalHistory({ signals }: SignalHistoryProps) {
               <TableRow>
                 <TableHead>Time</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Level</TableHead>
                 <TableHead className="text-right">Price (USDT)</TableHead>
               </TableRow>
             </TableHeader>
@@ -39,12 +49,13 @@ export function SignalHistory({ signals }: SignalHistoryProps) {
                         {signal.type}
                       </span>
                     </TableCell>
+                    <TableCell className={`font-medium ${getLevelClass(signal.level)}`}>{signal.level}</TableCell>
                     <TableCell className="text-right tabular-nums">{signal.price.toFixed(5)}</TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
+                  <TableCell colSpan={4} className="text-center text-muted-foreground h-24">
                     No signals generated yet.
                   </TableCell>
                 </TableRow>
