@@ -27,7 +27,7 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
   try {
     const endTime = Math.floor(Date.now() / 1000);
     const startTime = endTime - (24 * 60 * 60); // 24 hours ago
-    const interval = 'Min5';
+    const interval = 'Min1';
     const symbol = 'DOGE_USDT';
 
     const url = `https://contract.mexc.com/api/v1/contract/kline/${symbol}?interval=${interval}&start=${startTime}&end=${endTime}`;

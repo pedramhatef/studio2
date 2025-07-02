@@ -13,9 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
 // --- Technical Indicator Parameters ---
-const MACD_FAST_PERIOD = 12;
-const MACD_SLOW_PERIOD = 26;
-const MACD_SIGNAL_PERIOD = 9;
+const MACD_FAST_PERIOD = 5;
+const MACD_SLOW_PERIOD = 13;
+const MACD_SIGNAL_PERIOD = 5;
 
 // Helper to calculate Exponential Moving Average (EMA)
 const calculateEMA = (data: number[], period: number): (number | null)[] => {
