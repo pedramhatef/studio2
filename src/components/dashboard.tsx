@@ -171,19 +171,27 @@ export function Dashboard() {
       let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
       
       if (isWTBuy && lastSignal?.type !== 'BUY') {
-        if (isMACDBuy && isRSIBuySafe) {
+        let confirmations = 0;
+        if (isMACDBuy) confirmations++;
+        if (isRSIBuySafe) confirmations++;
+
+        if (confirmations === 2) {
           newSignal = { type: 'BUY', level: 'High' };
-        } else if (isMACDBuy && !isRSIBuySafe) {
+        } else if (confirmations === 1) {
           newSignal = { type: 'BUY', level: 'Medium' };
-        } else if (!isMACDBuy && isRSIBuySafe) {
+        } else {
           newSignal = { type: 'BUY', level: 'Low' };
         }
       } else if (isWTSell && lastSignal?.type !== 'SELL') {
-        if (isMACDSell && isRSISellSafe) {
+        let confirmations = 0;
+        if (isMACDSell) confirmations++;
+        if (isRSISellSafe) confirmations++;
+
+        if (confirmations === 2) {
           newSignal = { type: 'SELL', level: 'High' };
-        } else if (isMACDSell && !isRSISellSafe) {
+        } else if (confirmations === 1) {
           newSignal = { type: 'SELL', level: 'Medium' };
-        } else if (!isMACDSell && isRSISellSafe) {
+        } else {
           newSignal = { type: 'SELL', level: 'Low' };
         }
       }
