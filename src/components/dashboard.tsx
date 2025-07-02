@@ -14,16 +14,16 @@ const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
 // --- WaveTrend Parameters ---
 const WT_CHANNEL_LENGTH = 9;
-const WT_AVERAGE_LENGTH = 12;
+const WT_AVERAGE_LENGTH = 21; // Smoothed from 12
 const WT_SIGNAL_LENGTH = 4;
 
 // --- MACD Parameters ---
-const MACD_FAST_PERIOD = 9;
-const MACD_SLOW_PERIOD = 21;
-const MACD_SIGNAL_PERIOD = 6;
+const MACD_FAST_PERIOD = 12;  // Standard setting
+const MACD_SLOW_PERIOD = 26;  // Standard setting
+const MACD_SIGNAL_PERIOD = 9;   // Standard setting
 
 // --- RSI Parameters ---
-const RSI_PERIOD = 7;
+const RSI_PERIOD = 14; // Standard, less sensitive setting
 const RSI_OVERBOUGHT = 70;
 const RSI_OVERSOLD = 30;
 
