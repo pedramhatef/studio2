@@ -10,5 +10,7 @@ export interface Signal {
 
 export interface ChartDataPoint {
   time: number;
-  price: number;
+  high: number;
+  low: number;
+  close: number;
 }

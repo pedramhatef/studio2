@@ -39,16 +39,23 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
     }
     const data = await response.json();
 
-    if (data.code !== 0 || !data.data || !data.data.time || data.data.time.length === 0) {
-      console.error("Invalid data from MEXC API:", data.msg || "No data returned");
+    if (data.code !== 0 || !data.data || !data.data.time || data.data.time.length === 0 || !data.data.high || !data.data.low || !data.data.close) {
+      console.error("Invalid data from MEXC API:", data.msg || "Incomplete data returned");
       return [];
     }
     
-    const { time, close } = data.data;
+    const { time, high, low, close } = data.data;
 
-    const formattedData: ChartDataPoint[] = time.map((t: number, index: number) => ({
+    const minLength = Math.min(time.length, high.length, low.length, close.length);
+    if (time.length !== minLength || high.length !== minLength || low.length !== minLength || close.length !== minLength) {
+        console.warn("MEXC API returned inconsistent array lengths. Truncating data.");
+    }
+
+    const formattedData: ChartDataPoint[] = time.slice(0, minLength).map((t: number, index: number) => ({
       time: t * 1000,
-      price: close[index],
+      high: high[index],
+      low: low[index],
+      close: close[index],
     }));
     return formattedData;
   } catch (error) {

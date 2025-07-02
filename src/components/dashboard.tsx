@@ -12,104 +12,55 @@ import { useToast } from '@/hooks/use-toast';
 
 const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
-// --- Technical Indicator Parameters ---
-const MACD_FAST_PERIOD = 12;
-const MACD_SLOW_PERIOD = 26;
-const MACD_SIGNAL_PERIOD = 9;
-const RSI_PERIOD = 14;
-const RSI_OVERBOUGHT = 70;
-const RSI_OVERSOLD = 30;
+// --- WaveTrend Parameters ---
+const WT_CHANNEL_LENGTH = 10;
+const WT_AVERAGE_LENGTH = 21;
+const WT_SIGNAL_LENGTH = 4;
 
-// Helper to calculate Exponential Moving Average (EMA)
-const calculateEMA = (data: number[], period: number): (number | null)[] => {
-  if (data.length < period) return new Array(data.length).fill(null);
-  
+// Helper to calculate Exponential Moving Average (EMA) similar to Pine Script's 'ema'
+const calculateEMA = (data: number[], period: number): number[] => {
   const k = 2 / (period + 1);
-  const emaArray: (number | null)[] = new Array(data.length).fill(null);
-
-  let sma = data.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
-  emaArray[period - 1] = sma;
-
-  for (let i = period; i < data.length; i++) {
-    const prevEma = emaArray[i - 1];
-    if (prevEma !== null) {
-      emaArray[i] = (data[i] * k) + (prevEma * (1 - k));
+  const emaArray: number[] = [];
+  if (data.length > 0) {
+    emaArray[0] = data[0];
+    for (let i = 1; i < data.length; i++) {
+      const prevEma = emaArray[i - 1];
+      emaArray[i] = data[i] * k + prevEma * (1 - k);
     }
   }
-  
   return emaArray;
 };
 
-// Helper to calculate Relative Strength Index (RSI)
-const calculateRSI = (data: number[], period: number = 14): (number | null)[] => {
-    if (data.length < period + 1) return new Array(data.length).fill(null);
-    
-    const rsiArray: (number | null)[] = new Array(data.length).fill(null);
-    let gains = 0;
-    let losses = 0;
+// Helper to calculate Simple Moving Average (SMA)
+const calculateSMA = (data: number[], period: number): (number | null)[] => {
+  const smaArray: (number | null)[] = new Array(data.length).fill(null);
+  if (data.length < period) return smaArray;
 
-    for (let i = 1; i <= period; i++) {
-        const change = data[i] - data[i - 1];
-        if (change > 0) {
-            gains += change;
-        } else {
-            losses -= change;
-        }
-    }
-    
-    let avgGain = gains / period;
-    let avgLoss = losses / period;
-
-    if (avgLoss === 0) {
-       rsiArray[period] = 100;
-    } else {
-       const rs = avgGain / avgLoss;
-       rsiArray[period] = 100 - (100 / (1 + rs));
-    }
-
-    for (let i = period + 1; i < data.length; i++) {
-        const change = data[i] - data[i - 1];
-        let currentGain = 0;
-        let currentLoss = 0;
-        
-        if (change > 0) {
-            currentGain = change;
-        } else {
-            currentLoss = -change;
-        }
-
-        avgGain = (avgGain * (period - 1) + currentGain) / period;
-        avgLoss = (avgLoss * (period - 1) + currentLoss) / period;
-        
-        if (avgLoss === 0) {
-            rsiArray[i] = 100;
-        } else {
-            const rs = avgGain / avgLoss;
-            rsiArray[i] = 100 - (100 / (1 + rs));
-        }
-    }
-
-    return rsiArray;
+  for (let i = period - 1; i < data.length; i++) {
+    const window = data.slice(i - period + 1, i + 1);
+    const sum = window.reduce((a, b) => a + b, 0);
+    smaArray[i] = sum / period;
+  }
+  return smaArray;
 };
-
 
 export function Dashboard() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [trendWarning, setTrendWarning] = useState<boolean>(false);
   const { toast } = useToast();
 
   const fetchDataAndGenerateSignal = useCallback(async () => {
     try {
       const formattedData = await getChartData();
+      const requiredDataLength = WT_CHANNEL_LENGTH + WT_AVERAGE_LENGTH;
 
-      if (!formattedData || formattedData.length === 0) {
+      if (!formattedData || formattedData.length < requiredDataLength) {
         if (chartData.length === 0) {
           toast({
             variant: "destructive",
-            title: "Error fetching data",
-            description: "Could not fetch chart data. Retrying...",
+            title: "Fetching data...",
+            description: "Waiting for enough data to generate signals.",
           });
         }
         return;
@@ -117,60 +68,48 @@ export function Dashboard() {
       
       setChartData(formattedData);
 
-      // --- Signal Generation Logic using MACD & RSI ---
-      if (formattedData.length < MACD_SLOW_PERIOD + MACD_SIGNAL_PERIOD) return; 
-
-      const prices = formattedData.map(p => p.price);
+      // --- Signal Generation Logic using WaveTrend ---
+      const ap = formattedData.map(p => (p.high + p.low + p.close) / 3);
       
-      const emaFast = calculateEMA(prices, MACD_FAST_PERIOD);
-      const emaSlow = calculateEMA(prices, MACD_SLOW_PERIOD);
-
-      const macdLine = emaSlow.map((slow, i) => {
-          if (slow !== null && emaFast[i] !== null) {
-              return emaFast[i]! - slow;
-          }
-          return null;
+      const esa = calculateEMA(ap, WT_CHANNEL_LENGTH);
+      const d = calculateEMA(ap.map((val, i) => Math.abs(val - esa[i])), WT_CHANNEL_LENGTH);
+      
+      const ci = ap.map((val, i) => {
+          if (d[i] === 0) return 0;
+          return (val - esa[i]) / (0.015 * d[i]);
       });
-
-      const macdValues = macdLine.filter(val => val !== null) as number[];
-      if (macdValues.length < MACD_SIGNAL_PERIOD) return;
-
-      const signalLineEma = calculateEMA(macdValues, MACD_SIGNAL_PERIOD);
-      const signalValues = signalLineEma.filter(val => val !== null) as number[];
-      if (signalValues.length < 1) return;
-
-      const macdSlice = macdValues.slice(-signalValues.length);
-
-      const lastMacd = macdSlice[macdSlice.length - 1];
-      const lastSignalLine = signalValues[signalValues.length - 1];
       
-      const rsi = calculateRSI(prices, RSI_PERIOD);
-      const lastRsiValue = rsi[rsi.length - 1];
+      const tci = calculateEMA(ci, WT_AVERAGE_LENGTH); // WaveTrend 1
+      const wt2 = calculateSMA(tci, WT_SIGNAL_LENGTH); // WaveTrend 2 (Signal)
 
-      if (lastMacd === null || lastSignalLine === null || lastRsiValue === null) return;
+      if (tci.length < 2 || wt2.length < 2) return;
+
+      // --- Crossover Detection ---
+      const lastTci = tci[tci.length - 1];
+      const prevTci = tci[tci.length - 2];
+      const lastWt2 = wt2[wt2.length - 1];
+      const prevWt2 = wt2[wt2.length - 2];
       
-      const histogram = lastMacd - lastSignalLine;
-      const WARNING_THRESHOLD = Math.abs(lastMacd) * 0.10; 
-      setTrendWarning(Math.abs(histogram) < WARNING_THRESHOLD);
+      if (lastTci === null || prevTci === null || lastWt2 === null || prevWt2 === null) return;
 
       const lastSignalType = signals.length > 0 ? signals[0].type : null;
       const lastDataPoint = formattedData[formattedData.length - 1];
       
-      // BUY Condition: MACD bullish AND RSI not overbought.
-      if (lastMacd > lastSignalLine && lastRsiValue < RSI_OVERBOUGHT && lastSignalType !== 'BUY') {
+      // BUY Condition: tci crosses above wt2
+      if (prevTci < prevWt2 && lastTci > lastWt2 && lastSignalType !== 'BUY') {
         const newSignal: Signal = {
           type: 'BUY',
-          price: lastDataPoint.price,
+          price: lastDataPoint.close,
           time: lastDataPoint.time,
           displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
         };
         setSignals(prevSignals => [newSignal, ...prevSignals].slice(0, 15));
       } 
-      // SELL Condition: MACD bearish AND RSI not oversold.
-      else if (lastMacd < lastSignalLine && lastRsiValue > RSI_OVERSOLD && lastSignalType !== 'SELL') {
+      // SELL Condition: tci crosses below wt2
+      else if (prevTci > prevWt2 && lastTci < lastWt2 && lastSignalType !== 'SELL') {
         const newSignal: Signal = {
           type: 'SELL',
-          price: lastDataPoint.price,
+          price: lastDataPoint.close,
           time: lastDataPoint.time,
           displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
         };
@@ -200,7 +139,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>1-minute price data from MEXC. Signals are generated using a MACD & RSI combination for improved accuracy and are for demonstration only.</CardDescription>
+              <CardDescription>1-minute price data from MEXC. Signals are generated using the WaveTrend oscillator and are for demonstration only.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -208,7 +147,7 @@ export function Dashboard() {
           {isLoading && chartData.length === 0 ? (
             <Skeleton className="h-[400px] w-full" />
           ) : (
-            <CryptoChart data={chartData} signals={signals} trendWarning={trendWarning} />
+            <CryptoChart data={chartData} signals={signals} />
           )}
         </CardContent>
       </Card>
