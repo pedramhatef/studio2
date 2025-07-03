@@ -14,28 +14,31 @@ const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
 // --- WaveTrend Parameters ---
 const WT_CHANNEL_LENGTH = 9;
-const WT_AVERAGE_LENGTH = 21; // Smoothed from 12
+const WT_AVERAGE_LENGTH = 21; // Smoothed for more reliability
 const WT_SIGNAL_LENGTH = 4;
 
 // --- MACD Parameters ---
-const MACD_FAST_PERIOD = 12;  // Standard setting
-const MACD_SLOW_PERIOD = 26;  // Standard setting
-const MACD_SIGNAL_PERIOD = 9;   // Standard setting
+const MACD_FAST_PERIOD = 12;
+const MACD_SLOW_PERIOD = 26;
+const MACD_SIGNAL_PERIOD = 9;
 
 // --- RSI Parameters ---
-const RSI_PERIOD = 14; // Standard, less sensitive setting
-const RSI_OVERBOUGHT = 70;
-const RSI_OVERSOLD = 30;
+const RSI_PERIOD = 14;
+// Note: RSI 50-level is now used for momentum confirmation.
+
+// --- Trend Filter ---
+const EMA_TREND_PERIOD = 50;
 
 // Helper to calculate Exponential Moving Average (EMA)
 const calculateEMA = (data: number[], period: number): number[] => {
   const k = 2 / (period + 1);
   const emaArray: number[] = [];
   if (data.length > 0) {
-    emaArray[0] = data[0];
+    let ema = data[0]; // Start with the first value
+    emaArray.push(ema);
     for (let i = 1; i < data.length; i++) {
-      const prevEma = emaArray[i - 1];
-      emaArray[i] = data[i] * k + prevEma * (1 - k);
+      ema = data[i] * k + ema * (1 - k);
+      emaArray.push(ema);
     }
   }
   return emaArray;
@@ -109,7 +112,7 @@ export function Dashboard() {
   const fetchDataAndGenerateSignal = useCallback(async () => {
     try {
       const formattedData = await getChartData();
-      const requiredDataLength = Math.max(WT_CHANNEL_LENGTH + WT_AVERAGE_LENGTH, MACD_SLOW_PERIOD, RSI_PERIOD + 1);
+      const requiredDataLength = Math.max(WT_CHANNEL_LENGTH + WT_AVERAGE_LENGTH, MACD_SLOW_PERIOD, RSI_PERIOD + 1, EMA_TREND_PERIOD);
 
       if (!formattedData || formattedData.length < requiredDataLength) {
         if (chartData.length === 0) {
@@ -128,6 +131,9 @@ export function Dashboard() {
       // --- Indicator Calculations ---
       const closePrices = formattedData.map(p => p.close);
       
+      // Trend Filter
+      const trendEMA = calculateEMA(closePrices, EMA_TREND_PERIOD);
+
       // WaveTrend
       const ap = formattedData.map(p => (p.high + p.low + p.close) / 3);
       const esa = calculateEMA(ap, WT_CHANNEL_LENGTH);
@@ -146,6 +152,8 @@ export function Dashboard() {
       const rsi = calculateRSI(closePrices, RSI_PERIOD);
 
       // --- Crossover Detection & Combined Signal Logic ---
+      const lastClose = closePrices[closePrices.length - 1];
+      const lastTrendEMA = trendEMA[trendEMA.length - 1];
       const lastTci = tci[tci.length - 1];
       const prevTci = tci[tci.length - 2];
       const lastWt2 = wt2[wt2.length - 1];
@@ -154,26 +162,31 @@ export function Dashboard() {
       const lastMacdSignal = signalLine[signalLine.length - 1];
       const lastRsi = rsi[rsi.length - 1];
       
-      if (lastTci === null || prevTci === null || lastWt2 === null || prevWt2 === null || lastMacd === null || lastMacdSignal === null || lastRsi === null) return;
+      if (lastTrendEMA === null || lastTci === null || prevTci === null || lastWt2 === null || prevWt2 === null || lastMacd === null || lastMacdSignal === null || lastRsi === null) return;
 
       const lastSignal = signals.length > 0 ? signals[0] : null;
       const lastDataPoint = formattedData[formattedData.length - 1];
       
       // Define conditions
-      const isWTBuy = prevTci < prevWt2 && lastTci > lastWt2;
-      const isMACDBuy = lastMacd > lastMacdSignal;
-      const isRSIBuySafe = lastRsi < RSI_OVERBOUGHT;
+      const isUptrend = lastClose > lastTrendEMA;
+      const isDowntrend = lastClose < lastTrendEMA;
 
+      const isWTBuy = prevTci < prevWt2 && lastTci > lastWt2;
       const isWTSell = prevTci > prevWt2 && lastTci < lastWt2;
-      const isMACDSell = lastMacd < lastMacdSignal;
-      const isRSISellSafe = lastRsi > RSI_OVERSOLD;
+
+      const isMACDConfirmBuy = lastMacd > lastMacdSignal;
+      const isRSIConfirmBuy = lastRsi > 50;
+      
+      const isMACDConfirmSell = lastMacd < lastMacdSignal;
+      const isRSIConfirmSell = lastRsi < 50;
 
       let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
       
-      if (isWTBuy && lastSignal?.type !== 'BUY') {
+      // BUY Signal Logic
+      if (isUptrend && isWTBuy && lastSignal?.type !== 'BUY') {
         let confirmations = 0;
-        if (isMACDBuy) confirmations++;
-        if (isRSIBuySafe) confirmations++;
+        if (isMACDConfirmBuy) confirmations++;
+        if (isRSIConfirmBuy) confirmations++;
 
         if (confirmations === 2) {
           newSignal = { type: 'BUY', level: 'High' };
@@ -182,10 +195,12 @@ export function Dashboard() {
         } else {
           newSignal = { type: 'BUY', level: 'Low' };
         }
-      } else if (isWTSell && lastSignal?.type !== 'SELL') {
+      } 
+      // SELL Signal Logic
+      else if (isDowntrend && isWTSell && lastSignal?.type !== 'SELL') {
         let confirmations = 0;
-        if (isMACDSell) confirmations++;
-        if (isRSISellSafe) confirmations++;
+        if (isMACDConfirmSell) confirmations++;
+        if (isRSIConfirmSell) confirmations++;
 
         if (confirmations === 2) {
           newSignal = { type: 'SELL', level: 'High' };
@@ -229,7 +244,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>Signals are generated using WaveTrend, MACD, and RSI for high-frequency scalping. For demonstration only.</CardDescription>
+              <CardDescription>Signals use an EMA trend filter with WaveTrend, MACD, and RSI for high-confidence scalping entries. For demonstration only.</CardDescription>
             </div>
           </div>
         </CardHeader>
