@@ -13,8 +13,8 @@ import { useToast } from '@/hooks/use-toast';
 const DATA_REFRESH_INTERVAL = 1000; // 1 second
 
 // --- WaveTrend Parameters ---
-const WT_CHANNEL_LENGTH = 9;
-const WT_AVERAGE_LENGTH = 21; // Smoothed for more reliability
+const WT_CHANNEL_LENGTH = 10;
+const WT_AVERAGE_LENGTH = 21;
 const WT_SIGNAL_LENGTH = 4;
 
 // --- MACD Parameters ---
@@ -24,7 +24,6 @@ const MACD_SIGNAL_PERIOD = 9;
 
 // --- RSI Parameters ---
 const RSI_PERIOD = 14;
-// Note: RSI 50-level is now used for momentum confirmation.
 
 // --- Trend Filter ---
 const EMA_TREND_PERIOD = 50;
@@ -112,127 +111,127 @@ export function Dashboard() {
   const fetchDataAndGenerateSignal = useCallback(async () => {
     try {
       const formattedData = await getChartData();
+      
+      if (!formattedData || formattedData.length === 0) {
+        return; // Wait for data
+      }
+
+      setChartData(formattedData);
+      
       const requiredDataLength = Math.max(WT_CHANNEL_LENGTH + WT_AVERAGE_LENGTH, MACD_SLOW_PERIOD, RSI_PERIOD + 1, EMA_TREND_PERIOD);
 
-      if (!formattedData || formattedData.length < requiredDataLength) {
-        if (chartData.length === 0) {
-          toast({
-            variant: "destructive",
-            title: "Fetching data...",
-            description: "Waiting for enough data to generate signals.",
-          });
-        }
-        setChartData(formattedData || []);
-        return;
+      if (formattedData.length < requiredDataLength) {
+        return; // Not enough data yet to generate signals
       }
       
-      setChartData(formattedData);
-
       // --- Indicator Calculations ---
       const closePrices = formattedData.map(p => p.close);
-      
-      // Trend Filter
       const trendEMA = calculateEMA(closePrices, EMA_TREND_PERIOD);
-
-      // WaveTrend
       const ap = formattedData.map(p => (p.high + p.low + p.close) / 3);
       const esa = calculateEMA(ap, WT_CHANNEL_LENGTH);
       const d = calculateEMA(ap.map((val, i) => Math.abs(val - esa[i])), WT_CHANNEL_LENGTH);
       const ci = ap.map((val, i) => (d[i] === 0) ? 0 : (val - esa[i]) / (0.015 * d[i]));
       const tci = calculateEMA(ci, WT_AVERAGE_LENGTH);
       const wt2 = calculateSMA(tci, WT_SIGNAL_LENGTH);
-
-      // MACD
       const fastEMA = calculateEMA(closePrices, MACD_FAST_PERIOD);
       const slowEMA = calculateEMA(closePrices, MACD_SLOW_PERIOD);
       const macdLine = fastEMA.map((val, i) => val - slowEMA[i]);
       const signalLine = calculateEMA(macdLine, MACD_SIGNAL_PERIOD);
-
-      // RSI
       const rsi = calculateRSI(closePrices, RSI_PERIOD);
 
-      // --- Crossover Detection & Combined Signal Logic ---
-      const lastClose = closePrices[closePrices.length - 1];
-      const lastTrendEMA = trendEMA[trendEMA.length - 1];
-      const lastTci = tci[tci.length - 1];
-      const prevTci = tci[tci.length - 2];
-      const lastWt2 = wt2[wt2.length - 1];
-      const prevWt2 = wt2[wt2.length - 2];
-      const lastMacd = macdLine[macdLine.length - 1];
-      const lastMacdSignal = signalLine[signalLine.length - 1];
-      const lastRsi = rsi[rsi.length - 1];
-      
-      if (lastTrendEMA === null || lastTci === null || prevTci === null || lastWt2 === null || prevWt2 === null || lastMacd === null || lastMacdSignal === null || lastRsi === null) return;
+      // --- Signal Generation using functional update to prevent stale state ---
+      setSignals(prevSignals => {
+        const lastTrendEMA = trendEMA[trendEMA.length - 1];
+        const lastTci = tci[tci.length - 1];
+        const prevTci = tci[tci.length - 2];
+        const lastWt2 = wt2[wt2.length - 1];
+        const prevWt2 = wt2[wt2.length - 2];
+        const lastMacd = macdLine[macdLine.length - 1];
+        const lastMacdSignal = signalLine[signalLine.length - 1];
+        const lastRsi = rsi[rsi.length - 1];
+        const lastClose = closePrices[closePrices.length - 1];
 
-      const lastSignal = signals.length > 0 ? signals[0] : null;
-      const lastDataPoint = formattedData[formattedData.length - 1];
-      
-      // Define conditions
-      const isUptrend = lastClose > lastTrendEMA;
-      const isDowntrend = lastClose < lastTrendEMA;
-
-      const isWTBuy = prevTci < prevWt2 && lastTci > lastWt2;
-      const isWTSell = prevTci > prevWt2 && lastTci < lastWt2;
-
-      const isMACDConfirmBuy = lastMacd > lastMacdSignal;
-      const isRSIConfirmBuy = lastRsi > 50;
-      
-      const isMACDConfirmSell = lastMacd < lastMacdSignal;
-      const isRSIConfirmSell = lastRsi < 50;
-
-      let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
-      
-      // BUY Signal Logic
-      if (isUptrend && isWTBuy && lastSignal?.type !== 'BUY') {
-        let confirmations = 0;
-        if (isMACDConfirmBuy) confirmations++;
-        if (isRSIConfirmBuy) confirmations++;
-
-        if (confirmations === 2) {
-          newSignal = { type: 'BUY', level: 'High' };
-        } else if (confirmations === 1) {
-          newSignal = { type: 'BUY', level: 'Medium' };
-        } else {
-          newSignal = { type: 'BUY', level: 'Low' };
+        if (lastTrendEMA === null || lastTci === null || prevTci === null || lastWt2 === null || prevWt2 === null || lastMacd === null || lastMacdSignal === null || lastRsi === null) {
+          return prevSignals;
         }
-      } 
-      // SELL Signal Logic
-      else if (isDowntrend && isWTSell && lastSignal?.type !== 'SELL') {
-        let confirmations = 0;
-        if (isMACDConfirmSell) confirmations++;
-        if (isRSIConfirmSell) confirmations++;
 
-        if (confirmations === 2) {
-          newSignal = { type: 'SELL', level: 'High' };
-        } else if (confirmations === 1) {
-          newSignal = { type: 'SELL', level: 'Medium' };
-        } else {
-          newSignal = { type: 'SELL', level: 'Low' };
+        const lastSignal = prevSignals.length > 0 ? prevSignals[0] : null;
+        
+        const isUptrend = lastClose > lastTrendEMA;
+        const isDowntrend = lastClose < lastTrendEMA;
+        const isWTBuy = prevTci < prevWt2 && lastTci > lastWt2;
+        const isWTSell = prevTci > prevWt2 && lastTci < lastWt2;
+        const isMACDConfirmBuy = lastMacd > lastMacdSignal;
+        const isRSIConfirmBuy = lastRsi > 50;
+        const isMACDConfirmSell = lastMacd < lastMacdSignal;
+        const isRSIConfirmSell = lastRsi < 50;
+        
+        let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
+        
+        if (isWTBuy && lastSignal?.type !== 'BUY') {
+          let confirmations = 0;
+          if (isUptrend) confirmations++;
+          if (isMACDConfirmBuy) confirmations++;
+          if (isRSIConfirmBuy) confirmations++;
+          
+          if (confirmations >= 2) newSignal = { type: 'BUY', level: 'High' };
+          else if (confirmations === 1) newSignal = { type: 'BUY', level: 'Medium' };
+          else newSignal = { type: 'BUY', level: 'Low' };
+        } 
+        else if (isWTSell && lastSignal?.type !== 'SELL') {
+          let confirmations = 0;
+          if (isDowntrend) confirmations++;
+          if (isMACDConfirmSell) confirmations++;
+          if (isRSIConfirmSell) confirmations++;
+
+          if (confirmations >= 2) newSignal = { type: 'SELL', level: 'High' };
+          else if (confirmations === 1) newSignal = { type: 'SELL', level: 'Medium' };
+          else newSignal = { type: 'SELL', level: 'Low' };
         }
-      }
 
-      if (newSignal) {
-        const fullSignal: Signal = {
-            ...newSignal,
-            price: lastDataPoint.close,
-            time: lastDataPoint.time,
-            displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
-        };
-        setSignals(prevSignals => [fullSignal, ...prevSignals].slice(0, 15));
-      }
+        if (newSignal) {
+          const lastDataPoint = formattedData[formattedData.length - 1];
+          const fullSignal: Signal = {
+              ...newSignal,
+              price: lastDataPoint.close,
+              time: lastDataPoint.time,
+              displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
+          };
+          return [fullSignal, ...prevSignals].slice(0, 15);
+        }
+
+        return prevSignals;
+      });
 
     } catch (error) {
       console.error("Error processing data:", error);
+      toast({
+        variant: "destructive",
+        title: "Data Error",
+        description: "Could not fetch or process chart data.",
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [toast, chartData.length, signals]);
+  }, [toast]); // Dependency only on toast, which is stable.
 
   useEffect(() => {
     fetchDataAndGenerateSignal();
     const intervalId = setInterval(fetchDataAndGenerateSignal, DATA_REFRESH_INTERVAL);
     return () => clearInterval(intervalId);
   }, [fetchDataAndGenerateSignal]);
+
+  // Separate effect for the initial loading toast.
+  useEffect(() => {
+    const requiredDataLength = Math.max(WT_CHANNEL_LENGTH + WT_AVERAGE_LENGTH, MACD_SLOW_PERIOD, RSI_PERIOD + 1, EMA_TREND_PERIOD);
+    if (isLoading && chartData.length < requiredDataLength) {
+      toast({
+        variant: "destructive",
+        title: "Fetching data...",
+        description: "Waiting for enough data to generate signals.",
+      });
+    }
+  }, [isLoading, chartData.length, toast]);
 
   return (
     <div className="grid gap-8">
