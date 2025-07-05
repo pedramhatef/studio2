@@ -168,25 +168,33 @@ export function Dashboard() {
         
         let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
         
-        if (isWTBuy && lastSignal?.type !== 'BUY') {
-          let confirmations = 0;
-          if (isUptrend) confirmations++;
-          if (isMACDConfirmBuy) confirmations++;
-          if (isRSIConfirmBuy) confirmations++;
-          
-          if (confirmations >= 2) newSignal = { type: 'BUY', level: 'High' };
-          else if (confirmations === 1) newSignal = { type: 'BUY', level: 'Medium' };
-          else newSignal = { type: 'BUY', level: 'Low' };
-        } 
-        else if (isWTSell && lastSignal?.type !== 'SELL') {
-          let confirmations = 0;
-          if (isDowntrend) confirmations++;
-          if (isMACDConfirmSell) confirmations++;
-          if (isRSIConfirmSell) confirmations++;
+        // BUY Signal Logic: Must be in an uptrend AND have a WaveTrend buy signal.
+        if (isUptrend && isWTBuy && lastSignal?.type !== 'BUY') {
+            let confirmations = 0;
+            if (isMACDConfirmBuy) confirmations++;
+            if (isRSIConfirmBuy) confirmations++;
 
-          if (confirmations >= 2) newSignal = { type: 'SELL', level: 'High' };
-          else if (confirmations === 1) newSignal = { type: 'SELL', level: 'Medium' };
-          else newSignal = { type: 'SELL', level: 'Low' };
+            if (confirmations === 2) { // Both MACD and RSI confirm
+                newSignal = { type: 'BUY', level: 'High' };
+            } else if (confirmations === 1) { // Either MACD or RSI confirms
+                newSignal = { type: 'BUY', level: 'Medium' };
+            } else { // No confirmation, but WaveTrend crossover is with the trend
+                newSignal = { type: 'BUY', level: 'Low' };
+            }
+        } 
+        // SELL Signal Logic: Must be in a downtrend AND have a WaveTrend sell signal.
+        else if (isDowntrend && isWTSell && lastSignal?.type !== 'SELL') {
+            let confirmations = 0;
+            if (isMACDConfirmSell) confirmations++;
+            if (isRSIConfirmSell) confirmations++;
+
+            if (confirmations === 2) { // Both MACD and RSI confirm
+                newSignal = { type: 'SELL', level: 'High' };
+            } else if (confirmations === 1) { // Either MACD or RSI confirms
+                newSignal = { type: 'SELL', level: 'Medium' };
+            } else { // No confirmation, but WaveTrend crossover is with the trend
+                newSignal = { type: 'SELL', level: 'Low' };
+            }
         }
 
         if (newSignal) {
@@ -213,7 +221,7 @@ export function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]); // Dependency only on toast, which is stable.
+  }, [toast]);
 
   useEffect(() => {
     fetchDataAndGenerateSignal();
@@ -226,7 +234,6 @@ export function Dashboard() {
     const requiredDataLength = Math.max(WT_CHANNEL_LENGTH + WT_AVERAGE_LENGTH, MACD_SLOW_PERIOD, RSI_PERIOD + 1, EMA_TREND_PERIOD);
     if (isLoading && chartData.length < requiredDataLength) {
       toast({
-        variant: "destructive",
         title: "Fetching data...",
         description: "Waiting for enough data to generate signals.",
       });
@@ -243,7 +250,7 @@ export function Dashboard() {
                 <BarChart2 className="h-6 w-6" />
                 DOGE/USDT Real-Time Signals
               </CardTitle>
-              <CardDescription>Signals use an EMA trend filter with WaveTrend, MACD, and RSI for high-confidence scalping entries. For demonstration only.</CardDescription>
+              <CardDescription>Signals are generated with the trend using WaveTrend. Confidence is determined by MACD and RSI confirmation. For demonstration only.</CardDescription>
             </div>
           </div>
         </CardHeader>
