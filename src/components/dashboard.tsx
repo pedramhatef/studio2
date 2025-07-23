@@ -64,6 +64,7 @@ const calculateRSI = (data: number[], period: number): (number | null)[] => {
     let gains = 0;
     let losses = 0;
 
+    // Calculate initial average gain/loss
     for (let i = 1; i <= period; i++) {
         const change = data[i] - data[i - 1];
         if (change > 0) {
@@ -83,6 +84,7 @@ const calculateRSI = (data: number[], period: number): (number | null)[] => {
         rsiArray[period] = 100 - (100 / (1 + rs));
     }
 
+    // Calculate subsequent RSI values
     for (let i = period + 1; i < data.length; i++) {
         const change = data[i] - data[i - 1];
         let currentGain = change > 0 ? change : 0;
@@ -169,7 +171,7 @@ export function Dashboard() {
         let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
         
         // BUY Signal Logic: Must be in an uptrend AND have a WaveTrend buy signal.
-        if (isUptrend && isWTBuy && lastSignal?.type !== 'BUY') {
+        if (isUptrend && isWTBuy && (!lastSignal || lastSignal.type !== 'BUY' || lastSignal.level !== 'High')) {
             let confirmations = 0;
             if (isMACDConfirmBuy) confirmations++;
             if (isRSIConfirmBuy) confirmations++;
@@ -183,7 +185,7 @@ export function Dashboard() {
             }
         } 
         // SELL Signal Logic: Must be in a downtrend AND have a WaveTrend sell signal.
-        else if (isDowntrend && isWTSell && lastSignal?.type !== 'SELL') {
+        else if (isDowntrend && isWTSell && (!lastSignal || lastSignal.type !== 'SELL' || lastSignal.level !== 'High')) {
             let confirmations = 0;
             if (isMACDConfirmSell) confirmations++;
             if (isRSIConfirmSell) confirmations++;
