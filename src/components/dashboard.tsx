@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { CryptoChart } from './crypto-chart';
 import { SignalHistory } from './signal-history';
-import type { ChartDataPoint, Signal, SignalLevel } from '@/lib/types';
+import type { ChartDataPoint, Signal } from '@/lib/types';
 import { BarChart2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getChartData } from '@/app/actions';
@@ -161,8 +161,11 @@ export function Dashboard() {
         
         const isUptrend = lastClose > lastTrendEMA;
         const isDowntrend = lastClose < lastTrendEMA;
-        const isWTBuy = prevTci < prevWt2 && lastTci > lastWt2;
-        const isWTSell = prevTci > prevWt2 && lastTci < lastWt2;
+
+        // Corrected WaveTrend Logic
+        const isCrossUnder = prevTci < prevWt2 && lastTci > lastWt2; // BUY condition: tci crosses above its SMA
+        const isCrossOver = prevTci > prevWt2 && lastTci < lastWt2; // SELL condition: tci crosses below its SMA
+
         const isMACDConfirmBuy = lastMacd > lastMacdSignal;
         const isRSIConfirmBuy = lastRsi > 50;
         const isMACDConfirmSell = lastMacd < lastMacdSignal;
@@ -170,8 +173,8 @@ export function Dashboard() {
         
         let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
         
-        // BUY Signal Logic: Must be in an uptrend AND have a WaveTrend buy signal.
-        if (isUptrend && isWTBuy && (!lastSignal || lastSignal.type !== 'BUY' || lastSignal.level !== 'High')) {
+        // BUY Signal Logic: Must be in an uptrend AND have a WaveTrend cross-under.
+        if (isUptrend && isCrossUnder && (!lastSignal || lastSignal.type !== 'BUY')) {
             let confirmations = 0;
             if (isMACDConfirmBuy) confirmations++;
             if (isRSIConfirmBuy) confirmations++;
@@ -184,8 +187,8 @@ export function Dashboard() {
                 newSignal = { type: 'BUY', level: 'Low' };
             }
         } 
-        // SELL Signal Logic: Must be in a downtrend AND have a WaveTrend sell signal.
-        else if (isDowntrend && isWTSell && (!lastSignal || lastSignal.type !== 'SELL' || lastSignal.level !== 'High')) {
+        // SELL Signal Logic: Must be in a downtrend AND have a WaveTrend cross-over.
+        else if (isDowntrend && isCrossOver && (!lastSignal || lastSignal.type !== 'SELL')) {
             let confirmations = 0;
             if (isMACDConfirmSell) confirmations++;
             if (isRSIConfirmSell) confirmations++;
