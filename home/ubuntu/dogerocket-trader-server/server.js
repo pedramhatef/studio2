@@ -1,6 +1,6 @@
 
 const { initializeApp, cert } = require('firebase-admin/app');
-const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+const { getFirestore, Timestamp, FieldValue } = require('firebase-admin/firestore');
 const fetch = require('node-fetch');
 const { calculateIndicators, generateSignal } = require('./signalEngine.js');
 
@@ -14,9 +14,9 @@ try {
     databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`
   });
 } catch (error) {
-    console.error("Error initializing Firebase Admin SDK:", error.message);
     // If the app is already initialized, it will throw an error. We can ignore it.
     if (!/already exists/i.test(error.message)) {
+        console.error("Error initializing Firebase Admin SDK:", error.message);
         process.exit(1);
     }
 }
@@ -26,7 +26,6 @@ console.log("Firebase Admin SDK initialized successfully.");
 
 // --- Global State ---
 let chartData = [];
-let lastSignal = null;
 let isFetching = false;
 const DATA_REFRESH_INTERVAL = 5000; // 5 seconds
 const MAX_DATA_POINTS = 1000; // Keep a max of 1000 data points to manage memory
@@ -83,13 +82,26 @@ async function fetchLatestCandle() {
 async function saveSignal(signal) {
     if (!signal) return;
     try {
+        const signalsRef = db.collection('signals');
+        // Check the last signal in the database to prevent duplicates
+        const q = signalsRef.orderBy('createdAt', 'desc').limit(1);
+        const querySnapshot = await q.get();
+        
+        if (!querySnapshot.empty) {
+            const lastDbSignal = querySnapshot.docs[0].data();
+            // If the last signal in the DB is the same type and level, do not save.
+            if (lastDbSignal.type === signal.type && lastDbSignal.level === signal.level) {
+                // console.log(`INFO: Ignoring duplicate signal (${signal.level} ${signal.type})`);
+                return;
+            }
+        }
+        
         const signalToSave = {
             ...signal,
             createdAt: Timestamp.fromMillis(signal.time)
         };
-        const docRef = await db.collection('signals').add(signalToSave);
+        const docRef = await signalsRef.add(signalToSave);
         console.log(`SUCCESS: Saved ${signal.level} ${signal.type} signal to DB. Doc ID: ${docRef.id}`);
-        lastSignal = signal; // Update lastSignal only after successful save
     } catch (error) {
         console.error("FIRESTORE ERROR: Failed to save signal:", error);
     }
@@ -105,14 +117,10 @@ function processDataAndGenerateSignal() {
 
   try {
     const indicators = calculateIndicators(chartData);
-    const newSignal = generateSignal(chartData, indicators, lastSignal);
+    // Passing null for lastSignal as we now check the DB directly
+    const newSignal = generateSignal(chartData, indicators, null);
 
     if (newSignal) {
-        // Simple check to prevent saving the exact same signal again
-        if (lastSignal && lastSignal.type === newSignal.type && lastSignal.level === newSignal.level) {
-            // console.log(`INFO: Ignoring duplicate signal (${newSignal.level} ${newSignal.type})`);
-            return;
-        }
         console.log(`--- New Signal Generated: ${newSignal.level} ${newSignal.type} @ ${newSignal.price} ---`);
         saveSignal(newSignal);
     }
