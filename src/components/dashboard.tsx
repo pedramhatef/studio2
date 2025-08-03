@@ -103,6 +103,22 @@ const calculateRSI = (data: number[], period: number): (number | null)[] => {
     return rsiArray;
 };
 
+const saveSignalToDB = async (signal: Omit<Signal, 'displayTime'>) => {
+  try {
+    const response = await fetch('/api/signals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signal),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to save signal to database.');
+    }
+  } catch (error) {
+    console.error("Error saving signal:", error);
+    // Optionally, show a toast to the user
+  }
+};
+
 
 export function Dashboard() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -162,52 +178,49 @@ export function Dashboard() {
         const isUptrend = lastClose > lastTrendEMA;
         const isDowntrend = lastClose < lastTrendEMA;
 
-        // Corrected WaveTrend Logic
-        const isCrossUnder = prevTci < prevWt2 && lastTci > lastWt2; // BUY condition: tci crosses above its SMA
-        const isCrossOver = prevTci > prevWt2 && lastTci < lastWt2; // SELL condition: tci crosses below its SMA
-
-        const isMACDConfirmBuy = lastMacd > lastMacdSignal;
-        const isRSIConfirmBuy = lastRsi > 50;
-        const isMACDConfirmSell = lastMacd < lastMacdSignal;
-        const isRSIConfirmSell = lastRsi < 50;
+        const isWTCrossUnder = prevTci < prevWt2 && lastTci > lastWt2;
+        const isWTCrossOver = prevTci > prevWt2 && lastTci < lastWt2;
         
         let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
         
-        // BUY Signal Logic: Must be in an uptrend AND have a WaveTrend cross-under.
-        if (isUptrend && isCrossUnder && (!lastSignal || lastSignal.type !== 'BUY')) {
+        if (isUptrend && isWTCrossUnder && (!lastSignal || lastSignal.type !== 'BUY')) {
             let confirmations = 0;
-            if (isMACDConfirmBuy) confirmations++;
-            if (isRSIConfirmBuy) confirmations++;
+            if (lastMacd > lastMacdSignal) confirmations++;
+            if (lastRsi > 50) confirmations++;
 
-            if (confirmations === 2) { // Both MACD and RSI confirm
+            if (confirmations === 2) {
                 newSignal = { type: 'BUY', level: 'High' };
-            } else if (confirmations === 1) { // Either MACD or RSI confirms
+            } else if (confirmations === 1) {
                 newSignal = { type: 'BUY', level: 'Medium' };
-            } else { // No confirmation, but WaveTrend crossover is with the trend
+            } else {
                 newSignal = { type: 'BUY', level: 'Low' };
             }
         } 
-        // SELL Signal Logic: Must be in a downtrend AND have a WaveTrend cross-over.
-        else if (isDowntrend && isCrossOver && (!lastSignal || lastSignal.type !== 'SELL')) {
+        else if (isDowntrend && isWTCrossOver && (!lastSignal || lastSignal.type !== 'SELL')) {
             let confirmations = 0;
-            if (isMACDConfirmSell) confirmations++;
-            if (isRSIConfirmSell) confirmations++;
+            if (lastMacd < lastMacdSignal) confirmations++;
+            if (lastRsi < 50) confirmations++;
 
-            if (confirmations === 2) { // Both MACD and RSI confirm
+            if (confirmations === 2) {
                 newSignal = { type: 'SELL', level: 'High' };
-            } else if (confirmations === 1) { // Either MACD or RSI confirms
+            } else if (confirmations === 1) {
                 newSignal = { type: 'SELL', level: 'Medium' };
-            } else { // No confirmation, but WaveTrend crossover is with the trend
+            } else {
                 newSignal = { type: 'SELL', level: 'Low' };
             }
         }
 
         if (newSignal) {
           const lastDataPoint = formattedData[formattedData.length - 1];
+          const signalToSave = {
+            ...newSignal,
+            price: lastDataPoint.close,
+            time: lastDataPoint.time,
+          };
+          saveSignalToDB(signalToSave);
+          
           const fullSignal: Signal = {
-              ...newSignal,
-              price: lastDataPoint.close,
-              time: lastDataPoint.time,
+              ...signalToSave,
               displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
           };
           return [fullSignal, ...prevSignals].slice(0, 15);
