@@ -29,6 +29,7 @@ let chartData = [];
 let isFetching = false;
 const DATA_REFRESH_INTERVAL = 5000; // 5 seconds
 const MAX_DATA_POINTS = 1000; // Keep a max of 1000 data points to manage memory
+let lastSignal = null; // In-memory store for the last signal
 
 // --- Functions ---
 async function fetchLatestCandle() {
@@ -102,6 +103,7 @@ async function saveSignal(signal) {
         };
         const docRef = await signalsRef.add(signalToSave);
         console.log(`SUCCESS: Saved ${signal.level} ${signal.type} signal to DB. Doc ID: ${docRef.id}`);
+        lastSignal = signal; // Update in-memory lastSignal only after successful save
     } catch (error) {
         console.error("FIRESTORE ERROR: Failed to save signal:", error);
     }
@@ -117,8 +119,7 @@ function processDataAndGenerateSignal() {
 
   try {
     const indicators = calculateIndicators(chartData);
-    // Passing null for lastSignal as we now check the DB directly
-    const newSignal = generateSignal(chartData, indicators, null);
+    const newSignal = generateSignal(chartData, indicators, lastSignal);
 
     if (newSignal) {
         console.log(`--- New Signal Generated: ${newSignal.level} ${newSignal.type} @ ${newSignal.price} ---`);
