@@ -183,7 +183,7 @@ export function Dashboard() {
         
         let newSignal: Omit<Signal, 'price' | 'time' | 'displayTime'> | null = null;
         
-        if (isUptrend && isWTCrossUnder && (!lastSignal || lastSignal.type !== 'BUY')) {
+        if (isUptrend && isWTCrossUnder) {
             let confirmations = 0;
             if (lastMacd > lastMacdSignal) confirmations++;
             if (lastRsi > 50) confirmations++;
@@ -196,7 +196,7 @@ export function Dashboard() {
                 newSignal = { type: 'BUY', level: 'Low' };
             }
         } 
-        else if (isDowntrend && isWTCrossOver && (!lastSignal || lastSignal.type !== 'SELL')) {
+        else if (isDowntrend && isWTCrossOver) {
             let confirmations = 0;
             if (lastMacd < lastMacdSignal) confirmations++;
             if (lastRsi < 50) confirmations++;
@@ -211,6 +211,11 @@ export function Dashboard() {
         }
 
         if (newSignal) {
+          // *** FIX: Prevent duplicate signal writes ***
+          if (lastSignal && lastSignal.type === newSignal.type && lastSignal.level === newSignal.level) {
+            return prevSignals;
+          }
+
           const lastDataPoint = formattedData[formattedData.length - 1];
           const signalToSave = {
             ...newSignal,
