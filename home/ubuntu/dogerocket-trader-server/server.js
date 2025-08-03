@@ -60,17 +60,17 @@ async function fetchLatestCandle() {
       console.log(`Initialized with ${chartData.length} data points.`);
     } else {
       const lastTimestamp = chartData[chartData.length - 1].time;
-      const latestCandle = newCandles[newCandles.length - 1];
-
-      if (latestCandle && latestCandle.time > lastTimestamp) {
-          chartData.push(latestCandle);
+      newCandles.forEach(candle => {
+        if (candle.time > lastTimestamp) {
+          chartData.push(candle);
           if (chartData.length > MAX_DATA_POINTS) {
             chartData.shift(); // Keep array size manageable
           }
-      } else if (latestCandle && latestCandle.time === lastTimestamp) {
+        } else if (candle.time === lastTimestamp) {
           // Update the last candle with the most recent data
-          chartData[chartData.length - 1] = latestCandle;
-      }
+          chartData[chartData.length - 1] = candle;
+        }
+      });
     }
   } catch (error) {
     console.error("Error fetching data:", error.message);

@@ -1,44 +1,58 @@
 'use server';
 
-import type { ChartDataPoint } from '@/lib/types';
+import type { ChartDataPoint, Signal } from '@/lib/types';
+import { collection, query, orderBy, limit, getDocs, Timestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
-export async function getChartData(): Promise<ChartDataPoint[]> {
+export interface DashboardData {
+    chartData: ChartDataPoint[];
+    signals: Signal[];
+}
+
+export async function getDashboardData(): Promise<DashboardData> {
   try {
-    const endTime = Math.floor(Date.now() / 1000);
-    const startTime = endTime - (24 * 60 * 60); // 24 hours ago
-    const interval = 'Min1';
-    const symbol = 'DOGE_USDT';
-
-    const url = `https://contract.mexc.com/api/v1/contract/kline/${symbol}?interval=${interval}&start=${startTime}&end=${endTime}`;
-    const response = await fetch(url, { cache: 'no-store' });
-    
-    if (!response.ok) {
-      console.error(`Failed to fetch data from MEXC: ${response.statusText}`);
-      return [];
+    // --- Fetch Chart Data from Bybit ---
+    const bybitUrl = `https://api.bybit.com/v5/market/kline?category=linear&symbol=DOGEUSDT&interval=1&limit=200`;
+    const bybitResponse = await fetch(bybitUrl, { cache: 'no-store' });
+    if (!bybitResponse.ok) {
+        throw new Error(`Bybit API Error: ${bybitResponse.status} ${bybitResponse.statusText}`);
     }
-    const data = await response.json();
+    const bybitData = await bybitResponse.json();
 
-    if (data.code !== 0 || !data.data || !data.data.time || data.data.time.length === 0 || !data.data.high || !data.data.low || !data.data.close) {
-      console.error("Invalid data from MEXC API:", data.msg || "Incomplete data returned");
-      return [];
-    }
-    
-    const { time, high, low, close } = data.data;
-
-    const minLength = Math.min(time.length, high.length, low.length, close.length);
-    if (time.length !== minLength || high.length !== minLength || low.length !== minLength || close.length !== minLength) {
-        console.warn("MEXC API returned inconsistent array lengths. Truncating data.");
+    if (bybitData.retCode !== 0 || !bybitData.result || !bybitData.result.list) {
+        throw new Error(`Invalid data from Bybit API: ${bybitData.retMsg}`);
     }
 
-    const formattedData: ChartDataPoint[] = time.slice(0, minLength).map((t: number, index: number) => ({
-      time: t * 1000,
-      high: high[index],
-      low: low[index],
-      close: close[index],
-    }));
-    return formattedData;
+    const chartData: ChartDataPoint[] = bybitData.result.list.map((c: any) => ({
+      time: parseInt(c[0]),
+      open: parseFloat(c[1]),
+      high: parseFloat(c[2]),
+      low: parseFloat(c[3]),
+      close: parseFloat(c[4]),
+    })).reverse();
+
+
+    // --- Fetch Signals from Firestore ---
+    const signalsRef = collection(db, "signals");
+    const q = query(signalsRef, orderBy("createdAt", "desc"), limit(15));
+    const querySnapshot = await getDocs(q);
+    const signals: Signal[] = [];
+    querySnapshot.forEach(doc => {
+        const data = doc.data();
+        const createdAt = data.createdAt as Timestamp;
+        signals.push({
+            type: data.type,
+            level: data.level,
+            price: data.price,
+            time: data.time,
+            displayTime: createdAt.toDate().toLocaleTimeString(),
+        });
+    });
+
+    return { chartData, signals };
+
   } catch (error) {
-    console.error("Error fetching crypto data from server action:", error);
-    return [];
+    console.error("Error fetching dashboard data from server action:", error);
+    return { chartData: [], signals: [] };
   }
 }
