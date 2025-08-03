@@ -111,7 +111,8 @@ const saveSignalToDB = async (signal: Omit<Signal, 'displayTime'>) => {
       body: JSON.stringify(signal),
     });
     if (!response.ok) {
-      throw new Error('Failed to save signal to database.');
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to save signal to database.');
     }
   } catch (error) {
     console.error("Error saving signal:", error);
@@ -172,8 +173,6 @@ export function Dashboard() {
         if (lastTrendEMA === null || lastTci === null || prevTci === null || lastWt2 === null || prevWt2 === null || lastMacd === null || lastMacdSignal === null || lastRsi === null) {
           return prevSignals;
         }
-
-        const lastSignal = prevSignals.length > 0 ? prevSignals[0] : null;
         
         const isUptrend = lastClose > lastTrendEMA;
         const isDowntrend = lastClose < lastTrendEMA;
@@ -211,7 +210,8 @@ export function Dashboard() {
         }
 
         if (newSignal) {
-          // *** FIX: Prevent duplicate signal writes ***
+          // Check against the last signal in the *current* state
+          const lastSignal = prevSignals.length > 0 ? prevSignals[0] : null;
           if (lastSignal && lastSignal.type === newSignal.type && lastSignal.level === newSignal.level) {
             return prevSignals;
           }
