@@ -133,6 +133,20 @@ function processDataAndGenerateSignal() {
 // --- Main Loop ---
 async function main() {
   console.log("Starting DogeRocket Signal Bot Server...");
+  // Load the last signal from DB on startup to have the correct context
+  try {
+    const signalsRef = db.collection('signals');
+    const q = signalsRef.orderBy('createdAt', 'desc').limit(1);
+    const querySnapshot = await q.get();
+    if (!querySnapshot.empty) {
+        lastSignal = querySnapshot.docs[0].data();
+        console.log('Successfully loaded last signal from DB:', lastSignal);
+    }
+  } catch(error) {
+      console.error("Could not load last signal from DB on startup.", error);
+  }
+
+
   await fetchLatestCandle(); // Initial fetch
   
   // Set up intervals
