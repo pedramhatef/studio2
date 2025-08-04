@@ -114,8 +114,6 @@ const getNewSignal = (
     return null;
   }
 
-  const isUptrend = lastClose > lastTrendEMA;
-  const isDowntrend = lastClose < lastTrendEMA;
   const isWTBuy = prevTci < prevWt2! && lastTci > lastWt2!;
   const isWTSell = prevTci > prevWt2! && lastTci < lastWt2!;
   const isMACDConfirmBuy = lastMacd > lastMacdSignal;
@@ -123,6 +121,7 @@ const getNewSignal = (
   const isMACDConfirmSell = lastMacd < lastMacdSignal;
   const isRSIConfirmSell = lastRsi! < 50;
   const isVolumeSpike = lastVolume > lastVolumeSMA! * INDICATOR_PARAMS.VOLUME_SPIKE_FACTOR;
+  const isUptrend = lastClose > lastTrendEMA;
 
   // Signal generation logic
   if (isWTBuy && lastSignal?.type !== 'BUY') {
@@ -131,8 +130,8 @@ const getNewSignal = (
       (isRSIConfirmBuy ? 1 : 0) +
       (isUptrend ? 1 : 0);
     
-    if (confirmations === 3 && isVolumeSpike) return { type: 'BUY', level: 'High' };
-    if (confirmations >= 2) return { type: 'BUY', level: 'Medium' };
+    if (confirmations >= 2 && isVolumeSpike) return { type: 'BUY', level: 'High' };
+    if (confirmations >= 1) return { type: 'BUY', level: 'Medium' };
     return { type: 'BUY', level: 'Low' };
   } 
   
@@ -140,10 +139,10 @@ const getNewSignal = (
     let confirmations = 
       (isMACDConfirmSell ? 1 : 0) + 
       (isRSIConfirmSell ? 1 : 0) +
-      (isDowntrend ? 1 : 0);
+      (!isUptrend ? 1 : 0);
     
-    if (confirmations === 3 && isVolumeSpike) return { type: 'SELL', level: 'High' };
-    if (confirmations >= 2) return { type: 'SELL', level: 'Medium' };
+    if (confirmations >= 2 && isVolumeSpike) return { type: 'SELL', level: 'High' };
+    if (confirmations >= 1) return { type: 'SELL', level: 'Medium' };
     return { type: 'SELL', level: 'Low' };
   }
 
