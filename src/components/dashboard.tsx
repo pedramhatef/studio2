@@ -96,58 +96,43 @@ const getNewSignal = (
   lastSignal: Signal | null
 ): Omit<Signal, 'price' | 'time' | 'displayTime'> | null => {
   const {
-    lastVolume,
-    lastVolumeSMA,
     lastTrendEMA,
     lastTci,
     prevTci,
     lastWt2,
     prevWt2,
-    lastMacd,
-    lastMacdSignal,
     lastRsi,
     lastClose
   } = indicators;
 
-  // Validate indicator values
-  if ([lastVolumeSMA, lastWt2, prevWt2, lastRsi].some(val => val === null)) {
+  if ([lastWt2, prevWt2, lastRsi].some(val => val === null)) {
     return null;
   }
 
-  const isWTBuy = prevTci < prevWt2! && lastTci > lastWt2!;
-  const isWTSell = prevTci > prevWt2! && lastTci < lastWt2!;
-  const isMACDConfirmBuy = lastMacd > lastMacdSignal;
-  const isRSIConfirmBuy = lastRsi! > 50;
-  const isMACDConfirmSell = lastMacd < lastMacdSignal;
-  const isRSIConfirmSell = lastRsi! < 50;
-  const isVolumeSpike = lastVolume > lastVolumeSMA! * INDICATOR_PARAMS.VOLUME_SPIKE_FACTOR;
   const isUptrend = lastClose > lastTrendEMA;
-
-  // Signal generation logic
-  if (isWTBuy && lastSignal?.type !== 'BUY') {
-    let confirmations = 
-      (isMACDConfirmBuy ? 1 : 0) + 
-      (isRSIConfirmBuy ? 1 : 0) +
-      (isUptrend ? 1 : 0);
-    
-    if (confirmations >= 2 && isVolumeSpike) return { type: 'BUY', level: 'High' };
-    if (confirmations >= 1) return { type: 'BUY', level: 'Medium' };
-    return { type: 'BUY', level: 'Low' };
-  } 
+  const isDowntrend = lastClose < lastTrendEMA;
   
-  if (isWTSell && lastSignal?.type !== 'SELL') {
-    let confirmations = 
-      (isMACDConfirmSell ? 1 : 0) + 
-      (isRSIConfirmSell ? 1 : 0) +
-      (!isUptrend ? 1 : 0);
-    
-    if (confirmations >= 2 && isVolumeSpike) return { type: 'SELL', level: 'High' };
-    if (confirmations >= 1) return { type: 'SELL', level: 'Medium' };
-    return { type: 'SELL', level: 'Low' };
+  // BUY Condition: Crossover in oversold area, confirmed by trend and RSI
+  const isWTBuy = prevTci < prevWt2! && lastTci > lastWt2! && lastTci < -60;
+  if (isWTBuy && isUptrend && lastRsi! < 70 && lastSignal?.type !== 'BUY') {
+      let level: Signal['level'] = 'Low';
+      if (lastTci < -70) level = 'Medium';
+      if (lastTci < -80) level = 'High';
+      return { type: 'BUY', level };
+  }
+
+  // SELL Condition: Crossunder in overbought area, confirmed by trend and RSI
+  const isWTSell = prevTci > prevWt2! && lastTci < lastWt2! && lastTci > 60;
+  if (isWTSell && isDowntrend && lastRsi! > 30 && lastSignal?.type !== 'SELL') {
+      let level: Signal['level'] = 'Low';
+      if (lastTci > 70) level = 'Medium';
+      if (lastTci > 80) level = 'High';
+      return { type: 'SELL', level };
   }
 
   return null;
 };
+
 
 // --- Main Component ---
 export function Dashboard() {
@@ -167,69 +152,7 @@ export function Dashboard() {
       INDICATOR_PARAMS.VOLUME_AVG_PERIOD
     );
   }, []);
-
-  const processDataAndGenerateSignal = useCallback((data: ChartDataPoint[], currentSignals: Signal[]) => {
-      if (data.length < requiredDataLength) return;
-      
-      // Extract price and volume data
-      const closePrices = data.map(p => p.close);
-      const volumes = data.map(p => p.volume);
-
-      // Calculate indicators
-      const trendEMA = calculateEMA(closePrices, INDICATOR_PARAMS.EMA_TREND_PERIOD);
-      const ap = data.map(p => (p.high + p.low + p.close) / 3);
-      const esa = calculateEMA(ap, INDICATOR_PARAMS.WT_CHANNEL_LENGTH);
-      const d = calculateEMA(ap.map((val, i) => Math.abs(val - esa[i])), INDICATOR_PARAMS.WT_CHANNEL_LENGTH);
-      const ci = ap.map((val, i) => (d[i] === 0 ? 0 : (val - esa[i]) / (0.015 * d[i])));
-      const tci = calculateEMA(ci, INDICATOR_PARAMS.WT_AVERAGE_LENGTH);
-      const wt2 = calculateSMA(tci, INDICATOR_PARAMS.WT_SIGNAL_LENGTH);
-      const fastEMA = calculateEMA(closePrices, INDICATOR_PARAMS.MACD_FAST_PERIOD);
-      const slowEMA = calculateEMA(closePrices, INDICATOR_PARAMS.MACD_SLOW_PERIOD);
-      const macdLine = fastEMA.map((val, i) => val - slowEMA[i]);
-      const signalLine = calculateEMA(macdLine, INDICATOR_PARAMS.MACD_SIGNAL_PERIOD);
-      const rsi = calculateRSI(closePrices, INDICATOR_PARAMS.RSI_PERIOD);
-      const volumeSMA = calculateSMA(volumes, INDICATOR_PARAMS.VOLUME_AVG_PERIOD);
-
-      // Generate new signal
-      const lastIndex = data.length - 1;
-      const indicators: IndicatorValues = {
-        lastVolume: volumes[lastIndex],
-        lastVolumeSMA: volumeSMA[lastIndex],
-        lastTrendEMA: trendEMA[lastIndex],
-        lastTci: tci[lastIndex],
-        prevTci: tci[lastIndex - 1],
-        lastWt2: wt2[lastIndex],
-        prevWt2: wt2[lastIndex - 1],
-        lastMacd: macdLine[lastIndex],
-        lastMacdSignal: signalLine[lastIndex],
-        lastRsi: rsi[lastIndex],
-        lastClose: closePrices[lastIndex]
-      };
-
-      const lastSignal = currentSignals[0] || null;
-      const newSignalBase = getNewSignal(indicators, lastSignal);
-
-      if (newSignalBase) {
-        const lastDataPoint = data[lastIndex];
-        const newSignal: Signal = {
-          ...newSignalBase,
-          price: lastDataPoint.close,
-          time: lastDataPoint.time,
-          displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
-        };
-
-        if (currentSignals[0]?.time !== newSignal.time) {
-          setSignals(prev => [newSignal, ...prev].slice(0, MAX_SIGNALS));
-          saveSignalToDB({
-            type: newSignal.type,
-            level: newSignal.level,
-            price: newSignal.price,
-            time: newSignal.time
-          });
-        }
-      }
-  }, [requiredDataLength]);
-
+  
   const fetchInitialData = useCallback(async () => {
     try {
       const [initialChartData, initialSignals] = await Promise.all([
@@ -239,10 +162,6 @@ export function Dashboard() {
       
       setChartData(initialChartData);
       setSignals(initialSignals);
-      
-      if(initialChartData.length > 0) {
-        processDataAndGenerateSignal(initialChartData, initialSignals);
-      }
     } catch (error) {
        console.error("Error fetching initial data:", error);
        toast({
@@ -253,16 +172,12 @@ export function Dashboard() {
     } finally {
         setIsLoading(false);
     }
-  }, [processDataAndGenerateSignal, toast]);
+  }, [toast]);
 
   const fetchUpdateData = useCallback(async () => {
     try {
       const updatedChartData = await getChartData();
       setChartData(updatedChartData);
-      setSignals(currentSignals => {
-        processDataAndGenerateSignal(updatedChartData, currentSignals);
-        return currentSignals;
-      });
     } catch (error) {
        console.error("Error fetching updated data:", error);
        toast({
@@ -271,7 +186,7 @@ export function Dashboard() {
         description: "Could not refresh chart data.",
       });
     }
-  }, [processDataAndGenerateSignal, toast]);
+  }, [toast]);
   
   // Initial data load
   useEffect(() => {
@@ -283,6 +198,69 @@ export function Dashboard() {
     const intervalId = setInterval(fetchUpdateData, DATA_REFRESH_INTERVAL);
     return () => clearInterval(intervalId);
   }, [fetchUpdateData]);
+
+  // Process data and generate signals when chartData changes
+  useEffect(() => {
+    if (chartData.length < requiredDataLength) return;
+
+    // Extract price and volume data
+    const closePrices = chartData.map(p => p.close);
+    const volumes = chartData.map(p => p.volume);
+
+    // Calculate indicators
+    const trendEMA = calculateEMA(closePrices, INDICATOR_PARAMS.EMA_TREND_PERIOD);
+    const ap = chartData.map(p => (p.high + p.low + p.close) / 3);
+    const esa = calculateEMA(ap, INDICATOR_PARAMS.WT_CHANNEL_LENGTH);
+    const d = calculateEMA(ap.map((val, i) => Math.abs(val - esa[i])), INDICATOR_PARAMS.WT_CHANNEL_LENGTH);
+    const ci = ap.map((val, i) => (d[i] === 0 ? 0 : (val - esa[i]) / (0.015 * d[i])));
+    const tci = calculateEMA(ci, INDICATOR_PARAMS.WT_AVERAGE_LENGTH);
+    const wt2 = calculateSMA(tci, INDICATOR_PARAMS.WT_SIGNAL_LENGTH);
+    const fastEMA = calculateEMA(closePrices, INDICATOR_PARAMS.MACD_FAST_PERIOD);
+    const slowEMA = calculateEMA(closePrices, INDICATOR_PARAMS.MACD_SLOW_PERIOD);
+    const macdLine = fastEMA.map((val, i) => val - slowEMA[i]);
+    const signalLine = calculateEMA(macdLine, INDICATOR_PARAMS.MACD_SIGNAL_PERIOD);
+    const rsi = calculateRSI(closePrices, INDICATOR_PARAMS.RSI_PERIOD);
+    const volumeSMA = calculateSMA(volumes, INDICATOR_PARAMS.VOLUME_AVG_PERIOD);
+
+    // Generate new signal
+    const lastIndex = chartData.length - 1;
+    const indicators: IndicatorValues = {
+      lastVolume: volumes[lastIndex],
+      lastVolumeSMA: volumeSMA[lastIndex],
+      lastTrendEMA: trendEMA[lastIndex],
+      lastTci: tci[lastIndex],
+      prevTci: tci[lastIndex - 1],
+      lastWt2: wt2[lastIndex],
+      prevWt2: wt2[lastIndex - 1],
+      lastMacd: macdLine[lastIndex],
+      lastMacdSignal: signalLine[lastIndex],
+      lastRsi: rsi[lastIndex],
+      lastClose: closePrices[lastIndex]
+    };
+
+    const lastSignal = signals[0] || null;
+    const newSignalBase = getNewSignal(indicators, lastSignal);
+
+    if (newSignalBase) {
+      const lastDataPoint = chartData[lastIndex];
+      const newSignal: Signal = {
+        ...newSignalBase,
+        price: lastDataPoint.close,
+        time: lastDataPoint.time,
+        displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
+      };
+
+      if (signals[0]?.time !== newSignal.time) {
+        setSignals(prev => [newSignal, ...prev].slice(0, MAX_SIGNALS));
+        saveSignalToDB({
+          type: newSignal.type,
+          level: newSignal.level,
+          price: newSignal.price,
+          time: newSignal.time
+        });
+      }
+    }
+  }, [chartData, signals, requiredDataLength]);
 
   // Show signal toast
   useEffect(() => {
