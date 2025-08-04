@@ -16,4 +16,19 @@ export interface ChartDataPoint {
   high: number;
   low: number;
   close: number;
+  volume: number;
+}
+
+export interface IndicatorValues {
+  lastVolume: number;
+  lastVolumeSMA: number | null;
+  lastTrendEMA: number;
+  lastTci: number;
+  prevTci: number;
+  lastWt2: number | null;
+  prevWt2: number | null;
+  lastMacd: number;
+  lastMacdSignal: number;
+  lastRsi: number | null;
+  lastClose: number;
 }

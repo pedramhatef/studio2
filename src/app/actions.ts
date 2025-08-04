@@ -1,17 +1,11 @@
 'use server';
 
-import type { ChartDataPoint, Signal } from '@/lib/types';
+import type { ChartDataPoint } from '@/lib/types';
 import { collection, query, orderBy, limit, getDocs, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-export interface DashboardData {
-    chartData: ChartDataPoint[];
-    signals: Signal[];
-}
-
-export async function getDashboardData(): Promise<DashboardData> {
+export async function getChartData(): Promise<ChartDataPoint[]> {
   try {
-    // --- Fetch Chart Data from Bybit ---
     const bybitUrl = `https://api.bybit.com/v5/market/kline?category=linear&symbol=DOGEUSDT&interval=1&limit=200`;
     const bybitResponse = await fetch(bybitUrl, { cache: 'no-store' });
     if (!bybitResponse.ok) {
@@ -29,30 +23,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       high: parseFloat(c[2]),
       low: parseFloat(c[3]),
       close: parseFloat(c[4]),
+      volume: parseFloat(c[5]),
     })).reverse();
 
-
-    // --- Fetch Signals from Firestore ---
-    const signalsRef = collection(db, "signals");
-    const q = query(signalsRef, orderBy("createdAt", "desc"), limit(15));
-    const querySnapshot = await getDocs(q);
-    const signals: Signal[] = [];
-    querySnapshot.forEach(doc => {
-        const data = doc.data();
-        const createdAt = data.createdAt as Timestamp;
-        signals.push({
-            type: data.type,
-            level: data.level,
-            price: data.price,
-            time: data.time,
-            displayTime: createdAt.toDate().toLocaleTimeString(),
-        });
-    });
-
-    return { chartData, signals };
+    return chartData;
 
   } catch (error) {
-    console.error("Error fetching dashboard data from server action:", error);
-    return { chartData: [], signals: [] };
+    console.error("Error fetching chart data from server action:", error);
+    return [];
   }
 }
