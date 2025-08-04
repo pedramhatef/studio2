@@ -73,16 +73,21 @@ function calculateIndicators(chartData) {
 
 function generateSignal(chartData, indicators, lastSignal) {
     const lastIndex = chartData.length - 1;
+    // We need at least two points to detect a crossover
     if (lastIndex < 1) return null;
 
-    const { rsi, wt1, wt2 } = indicators;
+    const { wt1, wt2 } = indicators;
 
-    const lastRsi = rsi[lastIndex];
+    // Current values
     const lastWt1 = wt1[lastIndex];
     const lastWt2 = wt2[lastIndex];
+
+    // Previous values
+    const prevWt1 = wt1[lastIndex - 1];
+    const prevWt2 = wt2[lastIndex - 1];
     
     // Ensure we have valid indicator data to proceed
-    if (lastRsi === null || lastWt1 === null || lastWt2 === null) {
+    if (lastWt1 === null || lastWt2 === null || prevWt1 === null || prevWt2 === null) {
         return null;
     }
 
@@ -91,13 +96,16 @@ function generateSignal(chartData, indicators, lastSignal) {
 
     let newSignal = null;
 
+    const isBuyCrossover = prevWt1 < prevWt2 && lastWt1 > lastWt2;
+    const isSellCrossover = prevWt1 > prevWt2 && lastWt1 < lastWt2;
+
     // --- BUY SIGNAL LOGIC ---
-    // Condition: WaveTrend is crossing up its signal line in the oversold area.
-    if (lastWt1 > lastWt2 && lastWt1 < -60) {
+    // Condition: WaveTrend crosses up its signal line in the oversold area.
+    if (isBuyCrossover && lastWt1 < -60) {
         // Only generate a BUY if the last signal was a SELL
         if (!lastSignal || lastSignal.type === 'SELL') {
             let level;
-            if (lastWt1 < -75) level = 'High';
+            if (lastWt1 < -70) level = 'High';
             else if (lastWt1 < -65) level = 'Medium';
             else level = 'Low';
 
@@ -106,12 +114,12 @@ function generateSignal(chartData, indicators, lastSignal) {
     }
     
     // --- SELL SIGNAL LOGIC ---
-    // Condition: WaveTrend is crossing down its signal line in the overbought area.
-    else if (lastWt1 < lastWt2 && lastWt1 > 60) {
+    // Condition: WaveTrend crosses down its signal line in the overbought area.
+    else if (isSellCrossover && lastWt1 > 60) {
         // Only generate a SELL if the last signal was a BUY
         if (!lastSignal || lastSignal.type === 'BUY') {
             let level;
-            if (lastWt1 > 75) level = 'High';
+            if (lastWt1 > 70) level = 'High';
             else if (lastWt1 > 65) level = 'Medium';
             else level = 'Low';
             
