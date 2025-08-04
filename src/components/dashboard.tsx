@@ -7,7 +7,7 @@ import { SignalHistory } from './signal-history';
 import type { ChartDataPoint, Signal, IndicatorValues } from '@/lib/types';
 import { BarChart2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getChartData } from '@/app/actions';
+import { getChartData, getSignalHistoryFromDB, saveSignalToDB } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 
 // Constants
@@ -154,8 +154,6 @@ export function Dashboard() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
-  const prevSignalsRef = useRef<Signal[]>([]);
-  const initialLoadToastId = useRef<string | null>(null);
   const lastSignalTimeRef = useRef<number>(0);
 
   // Calculate required data length
@@ -169,21 +167,16 @@ export function Dashboard() {
     );
   }, []);
 
-  const fetchDataAndGenerateSignal = useCallback(async () => {
-    try {
-      const formattedData = await getChartData();
-      if (!formattedData?.length) return;
-      
-      setChartData(formattedData);
-      if (formattedData.length < requiredDataLength) return;
+  const processDataAndGenerateSignal = useCallback((data: ChartDataPoint[], currentSignals: Signal[]) => {
+      if (data.length < requiredDataLength) return;
       
       // Extract price and volume data
-      const closePrices = formattedData.map(p => p.close);
-      const volumes = formattedData.map(p => p.volume);
+      const closePrices = data.map(p => p.close);
+      const volumes = data.map(p => p.volume);
 
       // Calculate indicators
       const trendEMA = calculateEMA(closePrices, INDICATOR_PARAMS.EMA_TREND_PERIOD);
-      const ap = formattedData.map(p => (p.high + p.low + p.close) / 3);
+      const ap = data.map(p => (p.high + p.low + p.close) / 3);
       const esa = calculateEMA(ap, INDICATOR_PARAMS.WT_CHANNEL_LENGTH);
       const d = calculateEMA(ap.map((val, i) => Math.abs(val - esa[i])), INDICATOR_PARAMS.WT_CHANNEL_LENGTH);
       const ci = ap.map((val, i) => (d[i] === 0 ? 0 : (val - esa[i]) / (0.015 * d[i])));
@@ -197,61 +190,98 @@ export function Dashboard() {
       const volumeSMA = calculateSMA(volumes, INDICATOR_PARAMS.VOLUME_AVG_PERIOD);
 
       // Generate new signal
-      setSignals(prevSignals => {
-        const lastIndex = formattedData.length - 1;
-        const indicators: IndicatorValues = {
-          lastVolume: volumes[lastIndex],
-          lastVolumeSMA: volumeSMA[lastIndex],
-          lastTrendEMA: trendEMA[lastIndex],
-          lastTci: tci[lastIndex],
-          prevTci: tci[lastIndex - 1],
-          lastWt2: wt2[lastIndex],
-          prevWt2: wt2[lastIndex - 1],
-          lastMacd: macdLine[lastIndex],
-          lastMacdSignal: signalLine[lastIndex],
-          lastRsi: rsi[lastIndex],
-          lastClose: closePrices[lastIndex]
-        };
+      const lastIndex = data.length - 1;
+      const indicators: IndicatorValues = {
+        lastVolume: volumes[lastIndex],
+        lastVolumeSMA: volumeSMA[lastIndex],
+        lastTrendEMA: trendEMA[lastIndex],
+        lastTci: tci[lastIndex],
+        prevTci: tci[lastIndex - 1],
+        lastWt2: wt2[lastIndex],
+        prevWt2: wt2[lastIndex - 1],
+        lastMacd: macdLine[lastIndex],
+        lastMacdSignal: signalLine[lastIndex],
+        lastRsi: rsi[lastIndex],
+        lastClose: closePrices[lastIndex]
+      };
 
-        const lastSignal = prevSignals[0] || null;
-        const newSignal = getNewSignal(indicators, lastSignal);
+      const lastSignal = currentSignals[0] || null;
+      const newSignalBase = getNewSignal(indicators, lastSignal);
 
-        if (!newSignal) return prevSignals;
-
-        const lastDataPoint = formattedData[lastIndex];
-        const fullSignal: Signal = {
-          ...newSignal,
+      if (newSignalBase) {
+        const lastDataPoint = data[lastIndex];
+        const newSignal: Signal = {
+          ...newSignalBase,
           price: lastDataPoint.close,
           time: lastDataPoint.time,
           displayTime: new Date(lastDataPoint.time).toLocaleTimeString(),
         };
 
-        // Prevent duplicate signals
-        if (prevSignals[0]?.time === fullSignal.time) {
-          return prevSignals;
+        if (currentSignals[0]?.time !== newSignal.time) {
+          setSignals(prev => [newSignal, ...prev].slice(0, MAX_SIGNALS));
+          saveSignalToDB({
+            type: newSignal.type,
+            level: newSignal.level,
+            price: newSignal.price,
+            time: newSignal.time
+          });
         }
+      }
+  }, [requiredDataLength]);
 
-        return [fullSignal, ...prevSignals].slice(0, MAX_SIGNALS);
-      });
-
+  const fetchInitialData = useCallback(async () => {
+    try {
+      const [initialChartData, initialSignals] = await Promise.all([
+        getChartData(),
+        getSignalHistoryFromDB(),
+      ]);
+      
+      setChartData(initialChartData);
+      setSignals(initialSignals);
+      
+      if(initialChartData.length > 0) {
+        processDataAndGenerateSignal(initialChartData, initialSignals);
+      }
     } catch (error) {
-      console.error("Data processing error:", error);
-      toast({
+       console.error("Error fetching initial data:", error);
+       toast({
         variant: "destructive",
-        title: "Data Error",
-        description: "Could not process chart data",
+        title: "Initialization Error",
+        description: "Could not load initial chart and signal data.",
       });
     } finally {
-      if (isLoading) setIsLoading(false);
+        setIsLoading(false);
     }
-  }, [toast, isLoading, requiredDataLength]);
+  }, [processDataAndGenerateSignal, toast]);
 
-  // Fetch data periodically
+  const fetchUpdateData = useCallback(async () => {
+    try {
+      const updatedChartData = await getChartData();
+      setChartData(updatedChartData);
+      setSignals(currentSignals => {
+        processDataAndGenerateSignal(updatedChartData, currentSignals);
+        return currentSignals;
+      });
+    } catch (error) {
+       console.error("Error fetching updated data:", error);
+       toast({
+        variant: "destructive",
+        title: "Data Update Error",
+        description: "Could not refresh chart data.",
+      });
+    }
+  }, [processDataAndGenerateSignal, toast]);
+  
+  // Initial data load
   useEffect(() => {
-    fetchDataAndGenerateSignal();
-    const intervalId = setInterval(fetchDataAndGenerateSignal, DATA_REFRESH_INTERVAL);
+    fetchInitialData();
+  }, [fetchInitialData]);
+
+  // Periodic data refresh
+  useEffect(() => {
+    const intervalId = setInterval(fetchUpdateData, DATA_REFRESH_INTERVAL);
     return () => clearInterval(intervalId);
-  }, [fetchDataAndGenerateSignal]);
+  }, [fetchUpdateData]);
 
   // Show signal toast
   useEffect(() => {
@@ -272,17 +302,6 @@ export function Dashboard() {
       description: `Generated at $${newSignal.price.toFixed(5)}`,
     });
   }, [signals, toast]);
-
-  // Initial loading toast
-  useEffect(() => {
-    if (isLoading && chartData.length < requiredDataLength && !initialLoadToastId.current) {
-      const { id } = toast({
-        title: "Initializing data...",
-        description: "Collecting sufficient data points for analysis",
-      });
-      initialLoadToastId.current = id;
-    }
-  }, [isLoading, chartData.length, requiredDataLength, toast]);
 
   return (
     <div className="grid gap-8">
