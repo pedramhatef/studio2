@@ -80,7 +80,7 @@ async function fetchLatestCandle() {
   }
 }
 
-async function saveSignal(signal) {
+async function saveSignal(signal, db) {
     if (!signal) return;
     try {
         const signalsRef = db.collection('signals');
@@ -123,7 +123,7 @@ function processDataAndGenerateSignal() {
 
     if (newSignal) {
         console.log(`--- New Signal Generated: ${newSignal.level} ${newSignal.type} @ ${newSignal.price} ---`);
-        saveSignal(newSignal);
+        saveSignal(newSignal, db);
     }
   } catch (error) {
     console.error("Error during signal generation:", error);
